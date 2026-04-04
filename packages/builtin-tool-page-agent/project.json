@@ -14,8 +14,7 @@
       ],
       "cache": true,
       "dependsOn": [
-        "@lobechat/editor-runtime:build",
-        "@lobechat/types:build"
+        "@lobechat/editor-runtime:build"
       ]
     },
     "test": {

@@ -14,8 +14,7 @@
       ],
       "cache": true,
       "dependsOn": [
-        "@lobechat/prompts:build",
-        "@lobechat/types:build"
+        "@lobechat/prompts:build"
       ]
     },
     "test": {

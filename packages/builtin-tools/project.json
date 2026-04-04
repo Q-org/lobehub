@@ -37,8 +37,7 @@
         "@lobechat/builtin-tool-user-interaction:build",
         "@lobechat/builtin-tool-web-browsing:build",
         "@lobechat/builtin-tool-web-onboarding:build",
-        "@lobechat/const:build",
-        "@lobechat/types:build"
+        "@lobechat/const:build"
       ]
     },
     "test": {

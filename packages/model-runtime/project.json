@@ -17,8 +17,7 @@
         "@lobechat/business-model-runtime:build",
         "@lobechat/const:build",
         "@lobechat/utils:build",
-        "model-bank:build",
-        "@lobechat/types:build"
+        "model-bank:build"
       ]
     },
     "test": {

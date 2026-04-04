@@ -1,26 +1,43 @@
 {
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "name": "@lobechat/utils",
-  "projectType": "library",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/utils/src",
-  "tags": ["scope:utils", "type:library"],
+  "projectType": "library",
   "targets": {
     "build": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "pnpm exec tsc --project packages/utils/tsconfig.json --noEmit false",
-        "cwd": "{workspaceRoot}"
+        "command": "pnpm exec tsc --project packages/utils/tsconfig.json"
       },
-      "outputs": ["{workspaceRoot}/packages/utils/dist"],
-      "cache": true
+      "outputs": [
+        "{workspaceRoot}/packages/utils/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/const:build",
+        "@lobechat/types:build",
+        "model-bank:build",
+        "@lobechat/ssrf-safe-fetch:build"
+      ]
     },
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "pnpm exec vitest run --silent='passed-only' 'packages/utils'",
-        "cwd": "{workspaceRoot}"
+        "command": "pnpm exec vitest run packages/utils"
       },
-      "cache": true
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/utils/dist"
+      }
     }
-  }
+  },
+  "tags": [
+    "scope:@lobechat/utils"
+  ]
 }

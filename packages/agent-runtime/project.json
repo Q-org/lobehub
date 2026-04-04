@@ -12,11 +12,7 @@
       "outputs": [
         "{workspaceRoot}/packages/agent-runtime/dist"
       ],
-      "cache": true,
-      "dependsOn": [
-        "@lobechat/context-engine:build",
-        "@lobechat/types:build"
-      ]
+      "cache": true
     },
     "test": {
       "executor": "nx:run-commands",

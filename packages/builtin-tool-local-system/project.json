@@ -14,8 +14,7 @@
       ],
       "cache": true,
       "dependsOn": [
-        "@lobechat/electron-client-ipc:build",
-        "@lobechat/types:build"
+        "@lobechat/electron-client-ipc:build"
       ]
     },
     "test": {

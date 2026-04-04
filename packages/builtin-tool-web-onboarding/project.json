@@ -15,8 +15,7 @@
       "cache": true,
       "dependsOn": [
         "@lobechat/builtin-agent-onboarding:build",
-        "@lobechat/prompts:build",
-        "@lobechat/types:build"
+        "@lobechat/prompts:build"
       ]
     },
     "test": {

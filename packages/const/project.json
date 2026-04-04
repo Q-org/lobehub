@@ -1,18 +1,40 @@
 {
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "name": "@lobechat/const",
-  "projectType": "library",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/const/src",
-  "tags": ["scope:const", "type:library"],
+  "projectType": "library",
   "targets": {
     "build": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "pnpm exec tsc --project packages/const/tsconfig.json --noEmit false",
-        "cwd": "{workspaceRoot}"
+        "command": "pnpm exec tsc --project packages/const/tsconfig.json"
       },
-      "outputs": ["{workspaceRoot}/packages/const/dist"],
-      "cache": true
+      "outputs": [
+        "{workspaceRoot}/packages/const/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/business-const:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/const"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/const/dist"
+      }
     }
-  }
+  },
+  "tags": [
+    "scope:@lobechat/const"
+  ]
 }

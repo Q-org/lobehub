@@ -1,34 +1,45 @@
 {
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "name": "@lobechat/database",
-  "projectType": "library",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/database/src",
-  "tags": ["scope:database", "type:library"],
+  "projectType": "library",
   "targets": {
     "build": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "pnpm exec tsc --project packages/database/tsconfig.json --noEmit false",
-        "cwd": "{workspaceRoot}"
+        "command": "pnpm exec tsc --project packages/database/tsconfig.json"
       },
-      "outputs": ["{workspaceRoot}/packages/database/dist"],
-      "cache": true
+      "outputs": [
+        "{workspaceRoot}/packages/database/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/agent-templates:build",
+        "@lobechat/business-const:build",
+        "@lobechat/const:build",
+        "@lobechat/conversation-flow:build",
+        "@lobechat/types:build",
+        "@lobechat/utils:build"
+      ]
     },
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "pnpm exec vitest run --silent='passed-only' 'packages/database'",
-        "cwd": "{workspaceRoot}"
+        "command": "pnpm exec vitest run packages/database"
       },
-      "cache": true
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
     },
-    "lint": {
+    "clean": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "pnpm exec eslint packages/database/src --ext .ts,.tsx",
-        "cwd": "{workspaceRoot}"
-      },
-      "cache": true
+        "command": "rm -rf packages/database/dist"
+      }
     }
-  }
+  },
+  "tags": [
+    "scope:@lobechat/database"
+  ]
 }

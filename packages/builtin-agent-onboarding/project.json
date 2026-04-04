@@ -12,10 +12,7 @@
       "outputs": [
         "{workspaceRoot}/packages/builtin-agent-onboarding/dist"
       ],
-      "cache": true,
-      "dependsOn": [
-        "@lobechat/types:build"
-      ]
+      "cache": true
     },
     "test": {
       "executor": "nx:run-commands",

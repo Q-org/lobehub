@@ -12,11 +12,7 @@
       "outputs": [
         "{workspaceRoot}/packages/builtin-tool-activator/dist"
       ],
-      "cache": true,
-      "dependsOn": [
-        "@lobechat/prompts:build",
-        "@lobechat/types:build"
-      ]
+      "cache": true
     },
     "test": {
       "executor": "nx:run-commands",

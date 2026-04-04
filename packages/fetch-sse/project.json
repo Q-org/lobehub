@@ -16,8 +16,7 @@
       "dependsOn": [
         "@lobechat/const:build",
         "@lobechat/model-runtime:build",
-        "@lobechat/utils:build",
-        "@lobechat/types:build"
+        "@lobechat/utils:build"
       ]
     },
     "test": {

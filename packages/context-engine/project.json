@@ -16,8 +16,7 @@
       "dependsOn": [
         "@lobechat/database:build",
         "@lobechat/prompts:build",
-        "@lobechat/utils:build",
-        "@lobechat/types:build"
+        "@lobechat/utils:build"
       ]
     },
     "test": {

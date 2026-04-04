@@ -16,8 +16,7 @@
       "dependsOn": [
         "@lobechat/agent-manager-runtime:build",
         "@lobechat/const:build",
-        "@lobechat/prompts:build",
-        "@lobechat/types:build"
+        "@lobechat/prompts:build"
       ]
     },
     "test": {

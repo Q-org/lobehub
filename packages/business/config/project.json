@@ -16,8 +16,7 @@
       "dependsOn": [
         "@lobechat/business-const:build",
         "@lobechat/const:build",
-        "model-bank:build",
-        "@lobechat/types:build"
+        "model-bank:build"
       ]
     },
     "test": {

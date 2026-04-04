@@ -15,8 +15,7 @@
       "cache": true,
       "dependsOn": [
         "@lobechat/agent-manager-runtime:build",
-        "@lobechat/builtin-tool-agent-builder:build",
-        "@lobechat/types:build"
+        "@lobechat/builtin-tool-agent-builder:build"
       ]
     },
     "test": {
