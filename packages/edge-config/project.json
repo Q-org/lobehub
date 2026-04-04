@@ -1,0 +1,40 @@
+{
+  "name": "@lobechat/edge-config",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/edge-config/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/edge-config/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/edge-config/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/business-config:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/edge-config"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/edge-config/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/edge-config"
+  ]
+}

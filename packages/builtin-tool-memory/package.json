@@ -11,7 +11,10 @@
   },
   "main": "./src/index.ts",
   "scripts": {
-    "build:gen-tool-call": "tsx scripts/generate-tool-call.ts"
+    "build:gen-tool-call": "tsx scripts/generate-tool-call.ts",
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "@lobechat/memory-user-memory": "workspace:*",
@@ -28,5 +31,6 @@
     "lucide-react": "*",
     "react": "*",
     "react-i18next": "*"
-  }
+  },
+  "types": "./dist/index.d.ts"
 }

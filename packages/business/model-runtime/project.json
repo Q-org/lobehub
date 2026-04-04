@@ -1,0 +1,40 @@
+{
+  "name": "@lobechat/business-model-runtime",
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/business/model-runtime/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/business/model-runtime/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/business/model-runtime/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "model-bank:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/business/model-runtime"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/business/model-runtime/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/business-model-runtime"
+  ]
+}

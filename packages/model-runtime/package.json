@@ -9,7 +9,10 @@
   "scripts": {
     "test": "vitest",
     "test:coverage": "vitest --coverage --silent='passed-only'",
-    "test:update": "vitest -u"
+    "test:update": "vitest -u",
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.73.0",
@@ -41,5 +44,7 @@
   },
   "peerDependencies": {
     "zod": "^3.25.76"
-  }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts"
 }

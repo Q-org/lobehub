@@ -1,0 +1,52 @@
+{
+  "name": "@lobechat/builtin-agents",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/builtin-agents/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/builtin-agents/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/builtin-agents/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/builtin-agent-onboarding:build",
+        "@lobechat/builtin-tool-agent-builder:build",
+        "@lobechat/builtin-tool-agent-documents:build",
+        "@lobechat/builtin-tool-agent-management:build",
+        "@lobechat/builtin-tool-group-agent-builder:build",
+        "@lobechat/builtin-tool-group-management:build",
+        "@lobechat/builtin-tool-gtd:build",
+        "@lobechat/builtin-tool-notebook:build",
+        "@lobechat/builtin-tool-user-interaction:build",
+        "@lobechat/builtin-tool-web-onboarding:build",
+        "@lobechat/business-const:build",
+        "@lobechat/const:build",
+        "@lobechat/types:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/builtin-agents"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/builtin-agents/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/builtin-agents"
+  ]
+}

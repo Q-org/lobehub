@@ -1,0 +1,37 @@
+{
+  "name": "@lobechat/chat-adapter-wechat",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/chat-adapter-wechat/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/chat-adapter-wechat/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/chat-adapter-wechat/dist"
+      ],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/chat-adapter-wechat"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/chat-adapter-wechat/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/chat-adapter-wechat"
+  ]
+}

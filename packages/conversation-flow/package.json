@@ -2,12 +2,16 @@
   "name": "@lobechat/conversation-flow",
   "version": "0.0.1",
   "description": "Scalable complex conversation flow rendering engine",
-  "main": "src/index.ts",
+  "main": "./dist/index.js",
   "scripts": {
     "test": "vitest",
-    "test:coverage": "vitest --coverage --silent='passed-only'"
+    "test:coverage": "vitest --coverage --silent='passed-only'",
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "clean": "rm -rf dist"
   },
   "devDependencies": {
     "@lobechat/types": "workspace:*"
-  }
+  },
+  "types": "./dist/index.d.ts"
 }

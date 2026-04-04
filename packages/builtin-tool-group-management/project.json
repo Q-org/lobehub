@@ -1,0 +1,41 @@
+{
+  "name": "@lobechat/builtin-tool-group-management",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/builtin-tool-group-management/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/builtin-tool-group-management/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/builtin-tool-group-management/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/const:build",
+        "@lobechat/types:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/builtin-tool-group-management"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/builtin-tool-group-management/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/builtin-tool-group-management"
+  ]
+}

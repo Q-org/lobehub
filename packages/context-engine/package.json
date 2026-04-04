@@ -11,11 +11,14 @@
     "ai",
     "lobe"
   ],
-  "main": "src/index.ts",
+  "main": "./dist/index.js",
   "scripts": {
     "test": "vitest",
     "test:coverage": "vitest --coverage --silent='passed-only'",
-    "test:update": "vitest -u"
+    "test:update": "vitest -u",
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "@lobechat/database": "workspace:*",
@@ -32,5 +35,6 @@
   "devDependencies": {
     "@lobechat/types": "workspace:*",
     "@types/debug": "^4.1.12"
-  }
+  },
+  "types": "./dist/index.d.ts"
 }

@@ -19,5 +19,11 @@
     "@icons-pack/react-simple-icons": "^13.8.0",
     "@lobehub/ui": "^5",
     "klavis": "^2.15.0"
-  }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "types": "./dist/index.d.ts"
 }

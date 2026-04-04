@@ -2,14 +2,18 @@
   "name": "@lobechat/python-interpreter",
   "version": "1.0.0",
   "private": true,
-  "main": "src/index.ts",
+  "main": "./dist/index.js",
   "scripts": {
     "test": "vitest",
-    "test:coverage": "vitest --coverage"
+    "test:coverage": "vitest --coverage",
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "comlink": "^4.4.2",
     "pyodide": "^0.28.2",
     "url-join": "^5.0.0"
-  }
+  },
+  "types": "./dist/index.d.ts"
 }

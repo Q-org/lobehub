@@ -3,7 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "description": "Parse CSV, XLSX, JSON, and JSONL files into structured dataset records",
-  "keywords": ["dataset", "parser", "csv", "xlsx", "jsonl", "lobehub"],
+  "keywords": [
+    "dataset",
+    "parser",
+    "csv",
+    "xlsx",
+    "jsonl",
+    "lobehub"
+  ],
   "homepage": "https://github.com/lobehub/lobehub/tree/master/packages/eval-dataset-parser",
   "bugs": {
     "url": "https://github.com/lobehub/lobehub/issues/new"
@@ -17,7 +24,10 @@
   "main": "./src/index.ts",
   "scripts": {
     "test": "vitest",
-    "test:coverage": "vitest --coverage --silent='passed-only'"
+    "test:coverage": "vitest --coverage --silent='passed-only'",
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "papaparse": "^5.5.2",
@@ -29,5 +39,6 @@
   },
   "peerDependencies": {
     "typescript": ">=5"
-  }
+  },
+  "types": "./dist/index.d.ts"
 }

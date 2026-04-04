@@ -1,0 +1,37 @@
+{
+  "name": "@lobechat/observability-otel",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/observability-otel/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/observability-otel/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/observability-otel/dist"
+      ],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/observability-otel"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/observability-otel/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/observability-otel"
+  ]
+}

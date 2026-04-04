@@ -15,5 +15,11 @@
   "dependencies": {
     "commander": "^13.1.0",
     "gpt-tokenizer": "^3.4.0"
-  }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "types": "./dist/index.d.ts"
 }

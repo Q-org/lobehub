@@ -8,5 +8,11 @@
   "main": "./src/index.ts",
   "dependencies": {
     "model-bank": "workspace:*"
-  }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "types": "./dist/index.d.ts"
 }

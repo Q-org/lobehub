@@ -6,7 +6,10 @@
   "scripts": {
     "simple": "tsx examples/tools-calling.ts",
     "test": "vitest",
-    "test:coverage": "vitest --coverage --silent='passed-only'"
+    "test:coverage": "vitest --coverage --silent='passed-only'",
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "p-map": "^7.0.4"
@@ -15,5 +18,6 @@
     "@lobechat/context-engine": "workspace:*",
     "@lobechat/types": "workspace:*",
     "openai": "^4.104.0"
-  }
+  },
+  "types": "./dist/index.d.ts"
 }

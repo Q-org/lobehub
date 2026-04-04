@@ -1,0 +1,42 @@
+{
+  "name": "@lobechat/builtin-tool-gtd",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/builtin-tool-gtd/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/builtin-tool-gtd/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/builtin-tool-gtd/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/const:build",
+        "@lobechat/prompts:build",
+        "@lobechat/types:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/builtin-tool-gtd"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/builtin-tool-gtd/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/builtin-tool-gtd"
+  ]
+}

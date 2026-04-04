@@ -1,0 +1,40 @@
+{
+  "name": "@lobechat/builtin-tool-brief",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/builtin-tool-brief/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/builtin-tool-brief/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/builtin-tool-brief/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/types:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/builtin-tool-brief"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/builtin-tool-brief/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/builtin-tool-brief"
+  ]
+}

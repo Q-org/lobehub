@@ -9,12 +9,15 @@
     "./schemas": "./src/schemas/index.ts",
     "./types": "./src/types.ts"
   },
-  "main": "src/index.ts",
+  "main": "./dist/index.js",
   "scripts": {
     "build:gen-response-formats": "tsx scripts/generate-response-formats.ts",
     "test": "vitest --run",
     "test:coverage": "vitest --coverage --silent='passed-only'",
-    "type-check": "tsgo --noEmit -p tsconfig.json"
+    "type-check": "tsgo --noEmit -p tsconfig.json",
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "@lobechat/context-engine": "workspace:*",
@@ -37,5 +40,6 @@
   },
   "peerDependencies": {
     "zod": "^3.25.76"
-  }
+  },
+  "types": "./dist/index.d.ts"
 }

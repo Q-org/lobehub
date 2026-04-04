@@ -1,0 +1,42 @@
+{
+  "name": "@lobechat/config",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/config/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/config/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/config/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/business-config:build",
+        "@lobechat/const:build",
+        "@lobechat/types:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/config"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/config/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/config"
+  ]
+}

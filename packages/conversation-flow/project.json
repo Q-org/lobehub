@@ -1,0 +1,40 @@
+{
+  "name": "@lobechat/conversation-flow",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/conversation-flow/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/conversation-flow/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/conversation-flow/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/types:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/conversation-flow"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/conversation-flow/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/conversation-flow"
+  ]
+}

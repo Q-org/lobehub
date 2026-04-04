@@ -1,0 +1,37 @@
+{
+  "name": "@lobechat/electron-client-ipc",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/electron-client-ipc/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/electron-client-ipc/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/electron-client-ipc/dist"
+      ],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/electron-client-ipc"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/electron-client-ipc/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/electron-client-ipc"
+  ]
+}

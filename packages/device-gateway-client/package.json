@@ -8,7 +8,10 @@
   "main": "./src/index.ts",
   "scripts": {
     "test": "bunx vitest run --silent='passed-only'",
-    "test:coverage": "bunx vitest run --coverage"
+    "test:coverage": "bunx vitest run --coverage",
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "ws": "^8.18.1"
@@ -16,5 +19,6 @@
   "devDependencies": {
     "@types/ws": "^8.18.1",
     "vitest": "^3.0.0"
-  }
+  },
+  "types": "./dist/index.d.ts"
 }

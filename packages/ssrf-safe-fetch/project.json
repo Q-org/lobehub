@@ -1,0 +1,37 @@
+{
+  "name": "@lobechat/ssrf-safe-fetch",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/ssrf-safe-fetch/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/ssrf-safe-fetch/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/ssrf-safe-fetch/dist"
+      ],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/ssrf-safe-fetch"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/ssrf-safe-fetch/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/ssrf-safe-fetch"
+  ]
+}

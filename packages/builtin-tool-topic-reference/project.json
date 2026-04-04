@@ -1,0 +1,40 @@
+{
+  "name": "@lobechat/builtin-tool-topic-reference",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/builtin-tool-topic-reference/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/builtin-tool-topic-reference/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/builtin-tool-topic-reference/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/types:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/builtin-tool-topic-reference"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/builtin-tool-topic-reference/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/builtin-tool-topic-reference"
+  ]
+}

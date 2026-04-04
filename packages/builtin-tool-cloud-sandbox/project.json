@@ -1,0 +1,40 @@
+{
+  "name": "@lobechat/builtin-tool-cloud-sandbox",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/builtin-tool-cloud-sandbox/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/builtin-tool-cloud-sandbox/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/builtin-tool-cloud-sandbox/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/types:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/builtin-tool-cloud-sandbox"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/builtin-tool-cloud-sandbox/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/builtin-tool-cloud-sandbox"
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "name": "@lobechat/eval-dataset-parser",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/eval-dataset-parser/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/eval-dataset-parser/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/eval-dataset-parser/dist"
+      ],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/eval-dataset-parser"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/eval-dataset-parser/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/eval-dataset-parser"
+  ]
+}

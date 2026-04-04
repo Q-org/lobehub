@@ -1,0 +1,40 @@
+{
+  "name": "@lobechat/web-crawler",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/web-crawler/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/web-crawler/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/web-crawler/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/ssrf-safe-fetch:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/web-crawler"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/web-crawler/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/web-crawler"
+  ]
+}

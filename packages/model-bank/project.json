@@ -1,0 +1,40 @@
+{
+  "name": "model-bank",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/model-bank/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/model-bank/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/model-bank/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/business-const:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/model-bank"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/model-bank/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:model-bank"
+  ]
+}

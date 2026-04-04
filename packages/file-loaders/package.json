@@ -22,7 +22,10 @@
   "main": "./src/index.ts",
   "scripts": {
     "test": "vitest",
-    "test:coverage": "vitest --coverage --silent='passed-only'"
+    "test:coverage": "vitest --coverage --silent='passed-only'",
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "clean": "rm -rf dist"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.9.8",
@@ -43,5 +46,6 @@
   },
   "peerDependencies": {
     "typescript": ">=5"
-  }
+  },
+  "types": "./dist/index.d.ts"
 }

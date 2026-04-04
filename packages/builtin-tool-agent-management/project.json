@@ -1,0 +1,41 @@
+{
+  "name": "@lobechat/builtin-tool-agent-management",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/builtin-tool-agent-management/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/builtin-tool-agent-management/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/builtin-tool-agent-management/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/agent-manager-runtime:build",
+        "@lobechat/types:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/builtin-tool-agent-management"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/builtin-tool-agent-management/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/builtin-tool-agent-management"
+  ]
+}

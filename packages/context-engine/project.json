@@ -1,0 +1,43 @@
+{
+  "name": "@lobechat/context-engine",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/context-engine/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/context-engine/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/context-engine/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/database:build",
+        "@lobechat/prompts:build",
+        "@lobechat/utils:build",
+        "@lobechat/types:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/context-engine"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/context-engine/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/context-engine"
+  ]
+}

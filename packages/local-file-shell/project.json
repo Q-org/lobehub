@@ -1,0 +1,40 @@
+{
+  "name": "@lobechat/local-file-shell",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/local-file-shell/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/local-file-shell/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/local-file-shell/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/file-loaders:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/local-file-shell"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/local-file-shell/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/local-file-shell"
+  ]
+}

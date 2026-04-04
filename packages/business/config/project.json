@@ -1,0 +1,43 @@
+{
+  "name": "@lobechat/business-config",
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/business/config/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/business/config/tsconfig.json"
+      },
+      "outputs": [
+        "{workspaceRoot}/packages/business/config/dist"
+      ],
+      "cache": true,
+      "dependsOn": [
+        "@lobechat/business-const:build",
+        "@lobechat/const:build",
+        "model-bank:build",
+        "@lobechat/types:build"
+      ]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run packages/business/config"
+      },
+      "cache": true,
+      "dependsOn": [
+        "build"
+      ]
+    },
+    "clean": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "rm -rf packages/business/config/dist"
+      }
+    }
+  },
+  "tags": [
+    "scope:@lobechat/business-config"
+  ]
+}

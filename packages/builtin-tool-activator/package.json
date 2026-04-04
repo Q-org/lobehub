@@ -12,5 +12,11 @@
   "devDependencies": {
     "@lobechat/prompts": "workspace:*",
     "@lobechat/types": "workspace:*"
-  }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "types": "./dist/index.d.ts"
 }
