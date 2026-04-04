@@ -139,3 +139,7 @@ spaHtmlTemplates.ts
 
 .superpowers/
 docs/superpowers
+
+
+.nx/cache
+.nx/workspace-data

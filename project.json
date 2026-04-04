@@ -1,0 +1,67 @@
+{
+  "$schema": "./node_modules/nx/schemas/project-schema.json",
+  "name": "@lobehub/lobehub",
+  "projectType": "application",
+  "sourceRoot": "src",
+  "tags": ["type:application", "scope:root"],
+  "targets": {
+    "build:spa": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm run build:spa:raw",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": ["@lobechat/database:build", "@lobechat/utils:build"],
+      "inputs": ["production", "^production"],
+      "cache": true,
+      "outputs": ["{workspaceRoot}/public/_spa"]
+    },
+    "build:next": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm run build:next:raw",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": ["build:spa"],
+      "inputs": ["production", "^production"],
+      "cache": true,
+      "outputs": ["{workspaceRoot}/.next"]
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm run build",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": ["build:spa", "build:next"],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run --silent='passed-only'",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": ["default", "^production"],
+      "cache": true
+    },
+    "type-check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm run type-check",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": ["default", "^production"],
+      "cache": true
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm run lint:ts",
+        "cwd": "{workspaceRoot}"
+      },
+      "inputs": ["default"],
+      "cache": true
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "@lobechat/database",
+  "projectType": "library",
+  "sourceRoot": "packages/database/src",
+  "tags": ["scope:database", "type:library"],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tsc --project packages/database/tsconfig.json --noEmit false",
+        "cwd": "{workspaceRoot}"
+      },
+      "outputs": ["{workspaceRoot}/packages/database/dist"],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec vitest run --silent='passed-only' 'packages/database'",
+        "cwd": "{workspaceRoot}"
+      },
+      "cache": true
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec eslint packages/database/src --ext .ts,.tsx",
+        "cwd": "{workspaceRoot}"
+      },
+      "cache": true
+    }
+  }
+}

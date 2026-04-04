@@ -1,0 +1,55 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "analytics": true,
+  "cacheDirectory": ".nx/cache",
+  "defaultBase": "canary",
+  "namedInputs": {
+    "default": ["{projectRoot}/**/*", "sharedGlobals"],
+    "production": [
+      "default",
+      "!{projectRoot}/**/*.test.{ts,tsx}",
+      "!{projectRoot}/**/*.spec.{ts,tsx}",
+      "!{projectRoot}/tests/**/*",
+      "!{projectRoot}/e2e/**/*",
+      "!{projectRoot}/**/?(*.)test-setup.[jt]s",
+      "!{projectRoot}/**/*.md",
+      "!{projectRoot}/.gitignore"
+    ],
+    "sharedGlobals": [
+      "{workspaceRoot}/tsconfig.json",
+      "{workspaceRoot}/package.json",
+      "{workspaceRoot}/pnpm-workspace.yaml"
+    ]
+  },
+  "parallel": 3,
+  "targetDefaults": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["production", "^production"],
+      "cache": true
+    },
+    "build:spa": {
+      "dependsOn": ["^build"],
+      "inputs": ["production", "^production"],
+      "cache": true
+    },
+    "build:next": {
+      "dependsOn": ["build:spa"],
+      "inputs": ["production", "^production"],
+      "cache": true
+    },
+    "test": {
+      "inputs": ["default", "^production"],
+      "cache": true
+    },
+    "lint": {
+      "inputs": ["default"],
+      "cache": true
+    },
+    "type-check": {
+      "inputs": ["default", "^production"],
+      "cache": true
+    }
+  },
+  "useInferencePlugins": false
+}

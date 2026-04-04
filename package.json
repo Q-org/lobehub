@@ -438,6 +438,8 @@
     "@lobehub/lint": "2.1.5",
     "@lobehub/market-types": "^1.12.3",
     "@lobehub/seo-cli": "^1.7.0",
+    "@nx/js": "^22.6.4",
+    "@nx/vite": "^22.6.4",
     "@peculiar/webcrypto": "^1.5.0",
     "@playwright/test": "^1.58.0",
     "@prettier/sync": "^0.6.1",
@@ -503,6 +505,7 @@
     "mime": "^4.1.0",
     "node-fetch": "^3.3.2",
     "node-gyp": "^11.5.0",
+    "nx": "22.6.4",
     "openapi-typescript": "^7.10.1",
     "p-map": "^7.0.4",
     "prettier": "^3.8.1",
@@ -533,7 +536,9 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "@lobehub/editor",
-      "ffmpeg-static"
+      "@swc/core",
+      "@vercel/speed-insights",
+      "nx"
     ],
     "overrides": {
       "@types/react": "19.2.13",
