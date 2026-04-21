@@ -1,6 +1,6 @@
-import { remarklint } from '@lobehub/lint';
+const { remarklint } = require('@lobehub/lint');
 
-export default {
+module.exports = {
   ...remarklint,
   plugins: ['remark-mdx', ...remarklint.plugins, ['remark-lint-file-extension', false]],
 };
