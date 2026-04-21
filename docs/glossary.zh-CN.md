@@ -1,4 +1,3 @@
-```markdown
 # 术语表
 
 以下是一些词汇的固定翻译：
@@ -10,4 +9,3 @@
 | page       | 文稿          | Page          |
 | topic      | 话题          | Topic         |
 | thread     | 子话题        | Thread        |
-```
