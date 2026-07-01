@@ -25,17 +25,9 @@ const Agent = memo<AgentProps>(({ itemKey }) => {
   const { openConfigGroupModal } = useAgentModal();
 
   // Create menu items
-  const { createAgentMenuItem, createClaudeCodeMenuItem, createGroupChatMenuItem, isLoading } =
-    useCreateMenuItems();
+  const { createTopLevelMenuItems, isLoading } = useCreateMenuItems();
 
-  const addMenuItems = useMemo(() => {
-    const ccItem = createClaudeCodeMenuItem();
-    return [
-      createAgentMenuItem(),
-      createGroupChatMenuItem(),
-      ...(ccItem ? [{ type: 'divider' as const }, ccItem] : []),
-    ];
-  }, [createAgentMenuItem, createClaudeCodeMenuItem, createGroupChatMenuItem]);
+  const addMenuItems = useMemo(() => createTopLevelMenuItems(), [createTopLevelMenuItems]);
 
   const handleOpenConfigGroupModal = useCallback(() => {
     openConfigGroupModal();
@@ -66,7 +58,7 @@ const Agent = memo<AgentProps>(({ itemKey }) => {
       }
     >
       <Suspense fallback={<SkeletonList rows={6} />}>
-        <Flexbox gap={4} paddingBlock={1}>
+        <Flexbox gap={1} paddingBlock={1}>
           <List />
         </Flexbox>
       </Suspense>

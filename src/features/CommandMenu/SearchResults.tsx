@@ -1,3 +1,10 @@
+import {
+  AGENT_CHAT_TOPIC_URL,
+  DEFAULT_AVATAR,
+  GROUP_CHAT_TOPIC_URL,
+  GROUP_CHAT_URL,
+} from '@lobechat/const';
+import { Avatar, Flexbox } from '@lobehub/ui';
 import { Command } from 'cmdk';
 import dayjs from 'dayjs';
 import {
@@ -14,12 +21,12 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react';
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
 
 import { type SearchResult } from '@/database/repositories/search';
 import { useCommandMenuContext } from '@/features/CommandMenu/CommandMenuContext';
+import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import { useImageStore } from '@/store/image';
 import { generationTopicSelectors as imageGenerationTopicSelectors } from '@/store/image/slices/generationTopic/selectors';
 import { useVideoStore } from '@/store/video';
@@ -54,7 +61,7 @@ const SearchResults = memo<SearchResultsProps>(
     const { t } = useTranslation('common');
     const { t: tImage } = useTranslation('image');
     const { t: tVideo } = useTranslation('video');
-    const navigate = useNavigate();
+    const navigate = useWorkspaceAwareNavigate();
     const { menuContext } = useCommandMenuContext();
     const imageTopics = useImageStore(imageGenerationTopicSelectors.generationTopics);
     const activeImageTopicId = useImageStore((s) => s.activeGenerationTopicId);
@@ -73,22 +80,26 @@ const SearchResults = memo<SearchResultsProps>(
         }
         case 'topic': {
           if (result.agentId) {
-            navigate(`/agent/${result.agentId}?topic=${result.id}`);
+            navigate(AGENT_CHAT_TOPIC_URL(result.agentId, result.id));
+          } else if (result.groupId) {
+            navigate(GROUP_CHAT_TOPIC_URL(result.groupId, result.id));
           } else {
-            navigate(`/chat?topic=${result.id}`);
+            navigate('/');
           }
           break;
         }
         case 'message': {
-          // Navigate to the topic/agent where the message is
+          // Navigate to the topic/agent (or group) where the message lives
           if (result.topicId && result.agentId) {
-            navigate(`/agent/${result.agentId}?topic=${result.topicId}#${result.id}`);
-          } else if (result.topicId) {
-            navigate(`/chat?topic=${result.topicId}#${result.id}`);
+            navigate(`${AGENT_CHAT_TOPIC_URL(result.agentId, result.topicId)}#${result.id}`);
+          } else if (result.topicId && result.groupId) {
+            navigate(`${GROUP_CHAT_TOPIC_URL(result.groupId, result.topicId)}#${result.id}`);
           } else if (result.agentId) {
             navigate(`/agent/${result.agentId}#${result.id}`);
+          } else if (result.groupId) {
+            navigate(`${GROUP_CHAT_URL(result.groupId)}#${result.id}`);
           } else {
-            navigate(`/chat#${result.id}`);
+            navigate('/');
           }
           break;
         }
@@ -242,11 +253,40 @@ const SearchResults = memo<SearchResultsProps>(
       return result.description;
     };
 
-    const getSubtitle = (result: SearchResult) => {
+    const getSubtitle = (result: SearchResult): ReactNode => {
       const description = getDescription(result);
 
-      // For topic and message results, append creation date
-      if (result.type === 'topic' || result.type === 'message') {
+      // Topic results: prefix with agent identity (avatar + title) so users can
+      // distinguish topics with the same name (e.g. customer email) across agents.
+      if (result.type === 'topic') {
+        const formattedDate = dayjs(result.createdAt).format('MMM D, YYYY');
+        if (!result.agent) {
+          return description ? `${description} · ${formattedDate}` : formattedDate;
+        }
+        return (
+          <Flexbox horizontal align="center" gap={6} style={{ minWidth: 0 }}>
+            <Avatar
+              avatar={result.agent.avatar || DEFAULT_AVATAR}
+              background={result.agent.backgroundColor || undefined}
+              size={14}
+            />
+            <span style={{ flex: 'none' }}>{result.agent.title || t('defaultAgent')}</span>
+            <span style={{ flex: 'none' }}>·</span>
+            <span style={{ flex: 'none' }}>{formattedDate}</span>
+            {description && (
+              <>
+                <span style={{ flex: 'none' }}>·</span>
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {description}
+                </span>
+              </>
+            )}
+          </Flexbox>
+        );
+      }
+
+      // For message results, append creation date
+      if (result.type === 'message') {
         const formattedDate = dayjs(result.createdAt).format('MMM D, YYYY');
         if (description) {
           return `${description} · ${formattedDate}`;

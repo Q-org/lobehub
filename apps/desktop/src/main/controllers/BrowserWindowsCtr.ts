@@ -16,9 +16,19 @@ export default class BrowserWindowsCtr extends ControllerModule {
   static override readonly groupName = 'windows';
 
   @shortcut('showApp')
-  async toggleMainWindow() {
+  toggleMainWindow() {
     const mainWindow = this.app.browserManager.getMainWindow();
     mainWindow.toggleVisible();
+  }
+
+  @shortcut('quickComposer')
+  async openQuickComposer() {
+    await this.app.screenCaptureManager.startSession();
+  }
+
+  @shortcut('quickChat')
+  openQuickChat() {
+    this.app.browserManager.openQuickChatPopup();
   }
 
   @IpcMethod()
@@ -78,6 +88,13 @@ export default class BrowserWindowsCtr extends ControllerModule {
   isWindowMaximized() {
     return this.withSenderIdentifier((identifier) => {
       return this.app.browserManager.isWindowMaximized(identifier);
+    });
+  }
+
+  @IpcMethod()
+  isWindowFullScreen() {
+    return this.withSenderIdentifier((identifier) => {
+      return this.app.browserManager.isWindowFullScreen(identifier);
     });
   }
 

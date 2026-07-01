@@ -12,16 +12,57 @@ import WorkflowCollapse from './WorkflowCollapse';
 let mockIsGenerating = true;
 
 vi.mock('@lobehub/ui', () => ({
-  Accordion: ({ children, expandedKeys }: { children?: ReactNode; expandedKeys?: string[] }) => (
-    <div data-expanded-keys={JSON.stringify(expandedKeys ?? [])} data-testid="workflow-accordion">
-      {children}
-    </div>
-  ),
-  AccordionItem: ({ children, title }: { children?: ReactNode; title?: ReactNode }) => (
+  Accordion: ({
+    children,
+    expandedKeys,
+    onExpandedChange,
+  }: {
+    children?: ReactNode;
+    expandedKeys?: string[];
+    onExpandedChange?: (keys: string[]) => void;
+  }) => {
+    const isExpanded = (expandedKeys ?? []).includes('workflow');
+    return (
+      <div data-expanded-keys={JSON.stringify(expandedKeys ?? [])} data-testid="workflow-accordion">
+        <button
+          aria-label="toggle-accordion-header"
+          type="button"
+          onClick={() => onExpandedChange?.(isExpanded ? [] : ['workflow'])}
+        />
+        {children}
+      </div>
+    );
+  },
+  AccordionItem: ({
+    action,
+    children,
+    title,
+  }: {
+    action?: ReactNode;
+    children?: ReactNode;
+    title?: ReactNode;
+  }) => (
     <div>
       <div>{title}</div>
+      <div>{action}</div>
       <div>{children}</div>
     </div>
+  ),
+  // Needs to resolve to a `button` with an accessible name that matches the
+  // `title` prop so the tests' `getByRole('button', { name: 'Expand fully' })`
+  // assertions can find the expand toggle.
+  ActionIcon: ({
+    icon: IconComponent,
+    onClick,
+    title,
+  }: {
+    icon?: ComponentType;
+    onClick?: (e: unknown) => void;
+    title?: string;
+  }) => (
+    <button aria-label={title} type="button" onClick={onClick}>
+      {IconComponent ? <IconComponent /> : null}
+    </button>
   ),
   Block: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Flexbox: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -87,6 +128,7 @@ vi.mock('@/styles', () => ({
 
 vi.mock('../../../store', () => ({
   messageStateSelectors: {
+    isAssistantGroupItemGenerating: () => () => mockIsGenerating,
     isMessageGenerating: () => () => mockIsGenerating,
   },
   useConversationStore: (selector: (state: unknown) => unknown) => selector({}),
@@ -129,16 +171,54 @@ describe('WorkflowCollapse', () => {
     expect(getExpandedKeys()).toBe('["workflow"]');
   });
 
-  it('respects defaultStreamingExpanded={false} while streaming', () => {
+  it("respects defaultWorkflowExpandLevel='collapsed' while streaming", () => {
     render(
       <WorkflowCollapse
         assistantMessageId="msg-1"
         blocks={makeBlocks()}
-        defaultStreamingExpanded={false}
+        defaultWorkflowExpandLevel="collapsed"
       />,
     );
 
     expect(getExpandedKeys()).toBe('[]');
+  });
+
+  it("respects defaultWorkflowExpandLevel='full' after completion", () => {
+    mockIsGenerating = false;
+    render(
+      <WorkflowCollapse
+        assistantMessageId="msg-1"
+        blocks={makeBlocks({ result: { content: 'ok' } })}
+        defaultWorkflowExpandLevel="full"
+      />,
+    );
+
+    expect(getExpandedKeys()).toBe('["workflow"]');
+    expect(screen.getByRole('button', { name: 'Collapse' })).toBeInTheDocument();
+  });
+
+  it("keeps defaultWorkflowExpandLevel='full' across streaming→complete transition", () => {
+    const { rerender } = render(
+      <WorkflowCollapse
+        assistantMessageId="msg-1"
+        blocks={makeBlocks()}
+        defaultWorkflowExpandLevel="full"
+      />,
+    );
+
+    expect(getExpandedKeys()).toBe('["workflow"]');
+
+    mockIsGenerating = false;
+    rerender(
+      <WorkflowCollapse
+        assistantMessageId="msg-1"
+        blocks={makeBlocks({ result: { content: 'ok' } })}
+        defaultWorkflowExpandLevel="full"
+      />,
+    );
+
+    expect(getExpandedKeys()).toBe('["workflow"]');
+    expect(screen.getByRole('button', { name: 'Collapse' })).toBeInTheDocument();
   });
 
   it('auto expands and switches the header when confirmation is pending', async () => {
@@ -220,13 +300,42 @@ describe('WorkflowCollapse', () => {
       <WorkflowCollapse
         assistantMessageId="msg-1"
         blocks={makeBlocks()}
-        defaultStreamingExpanded={false}
+        defaultWorkflowExpandLevel="collapsed"
       />,
     );
 
     expect(getExpandedKeys()).toBe('[]');
     expect(screen.queryByRole('button', { name: 'Expand fully' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Collapse' })).not.toBeInTheDocument();
+
+    act(() => {
+      screen.getByRole('button', { name: 'toggle-accordion-header' }).click();
+    });
+
+    expect(getExpandedKeys()).toBe('["workflow"]');
+    expect(screen.getByRole('button', { name: 'Expand fully' })).toBeInTheDocument();
+  });
+
+  it('manual expand jumps to full when any phase defaults to full (heterogeneous agents)', () => {
+    mockIsGenerating = false;
+    render(
+      <WorkflowCollapse
+        assistantMessageId="msg-1"
+        blocks={makeBlocks({ result: { content: 'ok' } })}
+        defaultWorkflowExpandLevel={{ streaming: 'full' }}
+      />,
+    );
+
+    // Completion default falls back to 'collapsed' since only streaming is overridden.
+    expect(getExpandedKeys()).toBe('[]');
+
+    act(() => {
+      screen.getByRole('button', { name: 'toggle-accordion-header' }).click();
+    });
+
+    expect(getExpandedKeys()).toBe('["workflow"]');
+    // The toggle next to the header would offer "collapse" because we landed at 'full' directly.
+    expect(screen.getByRole('button', { name: 'Collapse' })).toBeInTheDocument();
   });
 
   it('collapses to collapsed when accordion header is clicked from full', () => {
@@ -278,7 +387,7 @@ describe('WorkflowCollapse', () => {
     expect(icon).toHaveAttribute('data-icon', 'Check');
   });
 
-  it('shows yellow warning when some tools fail after completion', () => {
+  it('shows check with a warning badge when some tools fail after completion', () => {
     mockIsGenerating = false;
     const blocks: AssistantContentBlock[] = [
       {
@@ -306,8 +415,10 @@ describe('WorkflowCollapse', () => {
     ];
 
     render(<WorkflowCollapse assistantMessageId="msg-1" blocks={blocks} />);
-    const icon = screen.getByTestId('icon');
-    expect(icon).toHaveAttribute('data-icon', 'TriangleAlert');
+    const icons = screen.getAllByTestId('icon');
+    const iconNames = icons.map((node) => node.getAttribute('data-icon'));
+    expect(iconNames).toContain('Check');
+    expect(iconNames).toContain('TriangleAlert');
   });
 
   it('shows red x when all tools fail after completion', () => {

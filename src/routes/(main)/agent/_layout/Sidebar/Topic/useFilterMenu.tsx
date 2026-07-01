@@ -8,17 +8,20 @@ import { useUserStore } from '@/store/user';
 import { preferenceSelectors } from '@/store/user/selectors';
 import type { TopicGroupMode, TopicSortBy } from '@/types/topic';
 
+import { useAgentTopicGroupMode } from './hooks/useAgentTopicGroupMode';
+
 export const useTopicFilterDropdownMenu = (): DropdownItem[] => {
   const { t } = useTranslation('topic');
+  const { topicGroupMode, updateTopicGroupMode } = useAgentTopicGroupMode();
 
-  const [topicGroupMode, topicSortBy, updatePreference] = useUserStore((s) => [
-    preferenceSelectors.topicGroupMode(s),
+  const [topicSortBy, topicIncludeCompleted, updatePreference] = useUserStore((s) => [
     preferenceSelectors.topicSortBy(s),
+    preferenceSelectors.topicIncludeCompleted(s),
     s.updatePreference,
   ]);
 
   return useMemo(() => {
-    const groupModes: TopicGroupMode[] = ['byTime', 'byProject', 'flat'];
+    const groupModes: TopicGroupMode[] = ['byStatus', 'byTime', 'byProject', 'flat'];
     const sortByOptions: TopicSortBy[] = ['createdAt', 'updatedAt'];
 
     return [
@@ -28,7 +31,7 @@ export const useTopicFilterDropdownMenu = (): DropdownItem[] => {
           key: `group-${mode}`,
           label: t(`filter.groupMode.${mode}`),
           onClick: () => {
-            updatePreference({ topicGroupMode: mode });
+            void updateTopicGroupMode(mode);
           },
         })),
         key: 'organize',
@@ -49,6 +52,29 @@ export const useTopicFilterDropdownMenu = (): DropdownItem[] => {
         label: t('filter.sort'),
         type: 'group' as const,
       },
+      { type: 'divider' as const },
+      {
+        children: [
+          {
+            icon: topicIncludeCompleted ? <Icon icon={LucideCheck} /> : <div />,
+            key: 'showCompleted',
+            label: t('filter.showCompleted'),
+            onClick: () => {
+              updatePreference({ topicIncludeCompleted: !topicIncludeCompleted });
+            },
+          },
+        ],
+        key: 'filter',
+        label: t('filter.filter'),
+        type: 'group' as const,
+      },
     ];
-  }, [topicGroupMode, topicSortBy, updatePreference, t]);
+  }, [
+    topicGroupMode,
+    topicSortBy,
+    topicIncludeCompleted,
+    updatePreference,
+    updateTopicGroupMode,
+    t,
+  ]);
 };

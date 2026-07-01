@@ -56,7 +56,7 @@ export const useStyles = createStaticStyles(({ css, cssVar }) => ({
 
     width: 180px;
     padding-block: 2px;
-    padding-inline-start: 10px;
+    padding-inline: 10px 2px;
     border-radius: ${cssVar.borderRadiusSM};
 
     font-size: 12px;
@@ -68,12 +68,55 @@ export const useStyles = createStaticStyles(({ css, cssVar }) => ({
     &:hover {
       background-color: ${cssVar.colorFillTertiary};
     }
+
+    & + &::before {
+      content: '';
+
+      position: absolute;
+      inset-block-start: 50%;
+      inset-inline-start: 0;
+      transform: translateY(-50%);
+
+      width: 1px;
+      height: 16px;
+
+      background-color: ${cssVar.colorBorderSecondary};
+
+      transition: opacity 0.15s ${cssVar.motionEaseInOut};
+    }
+
+    &:hover::before,
+    &[data-active='true']::before,
+    &:hover + &::before,
+    &[data-active='true'] + &::before {
+      opacity: 0;
+    }
+  `,
+  tabDragging: css`
+    cursor: grabbing;
+    z-index: 1;
+    background-color: ${cssVar.colorBgElevated};
+    box-shadow: ${cssVar.boxShadowSecondary};
+
+    &::before,
+    & + &::before {
+      opacity: 0;
+    }
   `,
   tabActive: css`
-    background-color: ${cssVar.colorBgContainer};
+    background-color: ${cssVar.colorBgElevated};
 
     &:hover {
-      background-color: ${cssVar.colorBgContainer};
+      background-color: ${cssVar.colorBgElevated};
+    }
+
+    html.desktop[data-theme='dark'] & {
+      background-color: ${cssVar.colorFillSecondary};
+      box-shadow: inset 0 0 0 1px ${cssVar.colorBorderSecondary};
+
+      &:hover {
+        background-color: ${cssVar.colorFillSecondary};
+      }
     }
   `,
   tabIcon: css`

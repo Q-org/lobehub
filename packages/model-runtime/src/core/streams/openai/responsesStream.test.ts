@@ -34,7 +34,7 @@ describe('OpenAIResponsesStream', () => {
               type: 'function',
               description:
                 'a search service. Useful for when you need to answer questions about current events. Input should be a search query. Output is a JSON array of the query results',
-              name: 'lobe-web-browsing____search____builtin',
+              name: 'lobe-web-browsing____search',
               parameters: {
                 properties: {
                   query: { description: 'The search query', type: 'string' },
@@ -88,7 +88,7 @@ describe('OpenAIResponsesStream', () => {
               type: 'function',
               description:
                 'A crawler can visit page content. Output is a JSON object of title, content, url and website',
-              name: 'lobe-web-browsing____crawlSinglePage____builtin',
+              name: 'lobe-web-browsing____crawlSinglePage',
               parameters: {
                 properties: { url: { description: 'The url need to be crawled', type: 'string' } },
                 required: ['url'],
@@ -100,7 +100,7 @@ describe('OpenAIResponsesStream', () => {
               type: 'function',
               description:
                 'A crawler can visit multi pages. If need to visit multi website, use this one. Output is an array of JSON object of title, content, url and website',
-              name: 'lobe-web-browsing____crawlMultiPages____builtin',
+              name: 'lobe-web-browsing____crawlMultiPages',
               parameters: {
                 properties: {
                   urls: {
@@ -147,7 +147,7 @@ describe('OpenAIResponsesStream', () => {
               type: 'function',
               description:
                 'a search service. Useful for when you need to answer questions about current events. Input should be a search query. Output is a JSON array of the query results',
-              name: 'lobe-web-browsing____search____builtin',
+              name: 'lobe-web-browsing____search',
               parameters: {
                 properties: {
                   query: { description: 'The search query', type: 'string' },
@@ -201,7 +201,7 @@ describe('OpenAIResponsesStream', () => {
               type: 'function',
               description:
                 'A crawler can visit page content. Output is a JSON object of title, content, url and website',
-              name: 'lobe-web-browsing____crawlSinglePage____builtin',
+              name: 'lobe-web-browsing____crawlSinglePage',
               parameters: {
                 properties: { url: { description: 'The url need to be crawled', type: 'string' } },
                 required: ['url'],
@@ -213,7 +213,7 @@ describe('OpenAIResponsesStream', () => {
               type: 'function',
               description:
                 'A crawler can visit multi pages. If need to visit multi website, use this one. Output is an array of JSON object of title, content, url and website',
-              name: 'lobe-web-browsing____crawlMultiPages____builtin',
+              name: 'lobe-web-browsing____crawlMultiPages',
               parameters: {
                 properties: {
                   urls: {
@@ -742,6 +742,7 @@ describe('OpenAIResponsesStream', () => {
   });
 
   it('should handle response.completed without usage', async () => {
+    const onFinal = vi.fn();
     const mockOpenAIStream = createReadableStream([
       {
         type: 'response.created',
@@ -759,10 +760,28 @@ describe('OpenAIResponsesStream', () => {
       },
     ]);
 
-    const protocolStream = OpenAIResponsesStream(mockOpenAIStream);
+    const protocolStream = OpenAIResponsesStream(mockOpenAIStream, {
+      callbacks: { onFinal },
+      payload: { apiMode: 'responses', model: 'gpt-5.4-mini', provider: 'openai' },
+    });
     const chunks = await readStreamChunk(protocolStream);
 
     expect(chunks).toMatchSnapshot();
+    expect(onFinal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        usageMissingDiagnostics: {
+          apiMode: 'responses',
+          hasUsageMetadata: false,
+          includeUsageRequested: undefined,
+          model: 'gpt-5.4-mini',
+          provider: 'openai',
+          responseId: 'resp_completed_no_usage',
+          source: 'openai_responses',
+          terminalEventType: 'response.completed',
+          terminalStatus: 'completed',
+        },
+      }),
+    );
   });
 
   it('should handle unknown chunk type as data', async () => {
@@ -869,7 +888,7 @@ describe('OpenAIResponsesStream', () => {
                 type: 'function',
                 description:
                   'a search service. Useful for when you need to answer questions about current events. Input should be a search query. Output is a JSON array of the query results',
-                name: 'lobe-web-browsing____search____builtin',
+                name: 'lobe-web-browsing____search',
                 parameters: {
                   properties: {
                     query: { description: 'The search query', type: 'string' },
@@ -923,7 +942,7 @@ describe('OpenAIResponsesStream', () => {
                 type: 'function',
                 description:
                   'A crawler can visit page content. Output is a JSON object of title, content, url and website',
-                name: 'lobe-web-browsing____crawlSinglePage____builtin',
+                name: 'lobe-web-browsing____crawlSinglePage',
                 parameters: {
                   properties: {
                     url: { description: 'The url need to be crawled', type: 'string' },
@@ -937,7 +956,7 @@ describe('OpenAIResponsesStream', () => {
                 type: 'function',
                 description:
                   'A crawler can visit multi pages. If need to visit multi website, use this one. Output is an array of JSON object of title, content, url and website',
-                name: 'lobe-web-browsing____crawlMultiPages____builtin',
+                name: 'lobe-web-browsing____crawlMultiPages',
                 parameters: {
                   properties: {
                     urls: {
@@ -984,7 +1003,7 @@ describe('OpenAIResponsesStream', () => {
                 type: 'function',
                 description:
                   'a search service. Useful for when you need to answer questions about current events. Input should be a search query. Output is a JSON array of the query results',
-                name: 'lobe-web-browsing____search____builtin',
+                name: 'lobe-web-browsing____search',
                 parameters: {
                   properties: {
                     query: { description: 'The search query', type: 'string' },
@@ -1038,7 +1057,7 @@ describe('OpenAIResponsesStream', () => {
                 type: 'function',
                 description:
                   'A crawler can visit page content. Output is a JSON object of title, content, url and website',
-                name: 'lobe-web-browsing____crawlSinglePage____builtin',
+                name: 'lobe-web-browsing____crawlSinglePage',
                 parameters: {
                   properties: {
                     url: { description: 'The url need to be crawled', type: 'string' },
@@ -1052,7 +1071,7 @@ describe('OpenAIResponsesStream', () => {
                 type: 'function',
                 description:
                   'A crawler can visit multi pages. If need to visit multi website, use this one. Output is an array of JSON object of title, content, url and website',
-                name: 'lobe-web-browsing____crawlMultiPages____builtin',
+                name: 'lobe-web-browsing____crawlMultiPages',
                 parameters: {
                   properties: {
                     urls: {
@@ -1256,7 +1275,7 @@ describe('OpenAIResponsesStream', () => {
                 type: 'function',
                 description:
                   'a search service. Useful for when you need to answer questions about current events. Input should be a search query. Output is a JSON array of the query results',
-                name: 'lobe-web-browsing____search____builtin',
+                name: 'lobe-web-browsing____search',
                 parameters: {
                   properties: {
                     query: { description: 'The search query', type: 'string' },
@@ -1310,7 +1329,7 @@ describe('OpenAIResponsesStream', () => {
                 type: 'function',
                 description:
                   'A crawler can visit page content. Output is a JSON object of title, content, url and website',
-                name: 'lobe-web-browsing____crawlSinglePage____builtin',
+                name: 'lobe-web-browsing____crawlSinglePage',
                 parameters: {
                   properties: {
                     url: { description: 'The url need to be crawled', type: 'string' },
@@ -1324,7 +1343,7 @@ describe('OpenAIResponsesStream', () => {
                 type: 'function',
                 description:
                   'A crawler can visit multi pages. If need to visit multi website, use this one. Output is an array of JSON object of title, content, url and website',
-                name: 'lobe-web-browsing____crawlMultiPages____builtin',
+                name: 'lobe-web-browsing____crawlMultiPages',
                 parameters: {
                   properties: {
                     urls: {

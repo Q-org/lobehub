@@ -23,16 +23,17 @@ export enum AsyncTaskErrorType {
   FreePlanLimit = 'FreePlanLimit',
 
   InvalidProviderAPIKey = 'InvalidProviderAPIKey',
-  /* ↑ cloud slot ↑ */
-
   /**
    * Model not found on server
    */
   ModelNotFound = 'ModelNotFound',
+  /* ↑ cloud slot ↑ */
+
   /**
    * the chunk parse result it empty
    */
   NoChunkError = 'NoChunkError',
+  ProviderContentModeration = 'ProviderContentModeration',
   ServerError = 'ServerError',
   /**
    * Subscription plan limit reached (paid users run out of credits)
@@ -47,10 +48,52 @@ export enum AsyncTaskErrorType {
    */
   TaskTriggerError = 'TaskTriggerError',
   Timeout = 'TaskTimeout',
+  /* ↓ cloud slot | workspace freeze ↓ */
+  /**
+   * Workspace was manually frozen by an admin; spend is blocked until unfrozen.
+   */
+  WorkspaceFrozenByAdmin = 'WorkspaceFrozenByAdmin',
+  /**
+   * Workspace was auto-frozen by risk control after abnormal spend; spend is blocked
+   * until manually unfrozen by an admin.
+   */
+  WorkspaceFrozenByRiskControl = 'WorkspaceFrozenByRiskControl',
+  /* ↑ cloud slot ↑ */
+}
+
+export interface AsyncTaskStructuredErrorItem {
+  /**
+   * Structured error cause when the top-level error wraps a lower-level failure.
+   */
+  cause?: AsyncTaskStructuredErrorItem;
+  /**
+   * Machine-readable error code from lower-level libraries or database drivers.
+   */
+  code?: string;
+  layer?: string;
+  memoryIndex?: number;
+  message: string;
+  /**
+   * Error class name, for example `DrizzleQueryError` or `PostgresError`.
+   */
+  name?: string;
+  preview?: string;
+  sourceId?: string;
+  sourceType?: string;
+  stack?: string;
+  stage?: string;
+}
+
+export interface AsyncTaskErrorBody {
+  detail: string;
+  extractErrors?: AsyncTaskStructuredErrorItem[];
+  persistErrors?: AsyncTaskStructuredErrorItem[];
+  progressErrors?: AsyncTaskStructuredErrorItem[];
+  retrievalErrors?: AsyncTaskStructuredErrorItem[];
 }
 
 export interface IAsyncTaskError {
-  body: string | { detail: string };
+  body: string | AsyncTaskErrorBody;
   name: string;
 }
 
@@ -62,7 +105,7 @@ export class AsyncTaskError implements IAsyncTaskError {
 
   name: string;
 
-  body: { detail: string };
+  body: AsyncTaskErrorBody;
 }
 
 export interface FileParsingTask {

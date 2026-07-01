@@ -1,11 +1,12 @@
 ---
 name: i18n
-description: Internationalization guide using react-i18next. Use when adding translations, creating i18n keys, or working with localized text in React components (.tsx files). Triggers on translation tasks, locale management, or i18n implementation.
+description: 'LobeHub i18n with react-i18next. Use for user-facing strings, locale keys, namespaces, useTranslation, t(), interpolation, zh-CN/en-US previews, hardcoded UI copy, or pnpm i18n.'
+user-invocable: false
 ---
 
 # LobeHub Internationalization Guide
 
-- Default language: Chinese (zh-CN)
+- Default language: English (en-US)
 - Framework: react-i18next
 - **Only edit files in `src/locales/default/`** - Never edit JSON files in `locales/`
 - Run `pnpm i18n` to generate translations (or manually translate zh-CN/en-US for dev preview)

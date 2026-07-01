@@ -1,7 +1,12 @@
 // @vitest-environment node
 import { ASYNC_TASK_TIMEOUT } from '@lobechat/business-config/server';
 import type { UserMemoryExtractionMetadata } from '@lobechat/types';
-import { AsyncTaskStatus, AsyncTaskType } from '@lobechat/types';
+import {
+  AsyncTaskError,
+  AsyncTaskErrorType,
+  AsyncTaskStatus,
+  AsyncTaskType,
+} from '@lobechat/types';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -153,6 +158,37 @@ describe('AsyncTaskModel', () => {
       const secondMetadata = task?.metadata as UserMemoryExtractionMetadata | undefined;
       expect(secondMetadata?.progress?.completedTopics).toBe(2);
       expect(task?.status).toBe(AsyncTaskStatus.Success);
+    });
+
+    it('should preserve error status and error payload when progress reaches total after failure', async () => {
+      const error = new AsyncTaskError(AsyncTaskErrorType.ServerError, 'Extraction failed');
+
+      const { id } = await serverDB
+        .insert(asyncTasks)
+        .values({
+          error,
+          metadata: {
+            progress: {
+              completedTopics: 1,
+              totalTopics: 2,
+            },
+            source: 'chat_topic',
+          },
+          status: AsyncTaskStatus.Error,
+          type: AsyncTaskType.UserMemoryExtractionWithChatTopic,
+          userId,
+        })
+        .returning()
+        .then((res) => res[0]);
+
+      await asyncTaskModel.incrementUserMemoryExtractionProgress(id);
+
+      const task = await serverDB.query.asyncTasks.findFirst({ where: eq(asyncTasks.id, id) });
+      const metadata = task?.metadata as UserMemoryExtractionMetadata | undefined;
+
+      expect(metadata?.progress?.completedTopics).toBe(2);
+      expect(task?.status).toBe(AsyncTaskStatus.Error);
+      expect(task?.error).toEqual(error);
     });
   });
 
@@ -465,6 +501,67 @@ describe('initUserMemoryExtractionMetadata', () => {
     } as any);
 
     expect(result.source).toBe('chat_topic');
+  });
+
+  it('should preserve a full control block including upstash workflowRunIds', () => {
+    const cancelRequestedAt = new Date().toISOString();
+    const result = initUserMemoryExtractionMetadata({
+      control: {
+        cancelReason: 'user_requested',
+        cancelRequestedAt,
+        cancelledBy: 'user-1',
+        upstash: {
+          workflowRunIds: ['run-1', 'run-2'],
+        },
+      },
+      progress: {
+        completedTopics: 1,
+        totalTopics: 4,
+      },
+      source: 'chat_topic',
+    } as any);
+
+    expect(result.control).toEqual({
+      cancelReason: 'user_requested',
+      cancelRequestedAt,
+      cancelledBy: 'user-1',
+      upstash: {
+        workflowRunIds: ['run-1', 'run-2'],
+      },
+    });
+    expect(result.progress).toEqual({ completedTopics: 1, totalTopics: 4 });
+  });
+
+  it('should default upstash workflowRunIds to an empty array when missing', () => {
+    const result = initUserMemoryExtractionMetadata({
+      control: {
+        cancelRequestedAt: new Date().toISOString(),
+        upstash: {},
+      },
+      progress: {
+        completedTopics: 0,
+        totalTopics: null,
+      },
+      source: 'chat_topic',
+    } as any);
+
+    expect(result.control?.upstash).toEqual({ workflowRunIds: [] });
+  });
+
+  it('should leave upstash undefined when control has no upstash field', () => {
+    const result = initUserMemoryExtractionMetadata({
+      control: {
+        cancelRequestedAt: new Date().toISOString(),
+      },
+      progress: {
+        completedTopics: 0,
+        totalTopics: null,
+      },
+      source: 'chat_topic',
+    } as any);
+
+    expect(result.control).toBeDefined();
+    expect(result.control?.upstash).toBeUndefined();
   });
 });
 

@@ -74,6 +74,12 @@ const Content = memo<ContentProps>(({ open, searchKeyword }) => {
   const activeTopicList = isSearching ? searchResults : allTopicList;
   const count = activeTopicList?.length || 0;
 
+  useEffect(() => {
+    if (fetchedCountRef.current > count) {
+      fetchedCountRef.current = count - 1;
+    }
+  }, [count]);
+
   // Initial load: calculate how many items needed to fill viewport
   useEffect(() => {
     if (!open || initializedRef.current || isLoadingMore || isSearching) return;
@@ -164,6 +170,7 @@ const Content = memo<ContentProps>(({ open, searchKeyword }) => {
             active={activeTopicId === topic.id}
             fav={topic.favorite}
             id={topic.id}
+            status={topic.status}
             threadId={activeThreadId}
             title={topic.title}
           />

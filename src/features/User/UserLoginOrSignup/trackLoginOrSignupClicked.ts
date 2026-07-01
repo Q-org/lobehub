@@ -1,14 +1,13 @@
 import { getSingletonAnalyticsOptional } from '@lobehub/analytics';
 
+import { resolveLandingClickId } from './landingClickId';
+
 interface TrackLoginOrSignupClickedParams {
   provider?: string;
   spm: string;
 }
 
-export const trackLoginOrSignupClicked = ({
-  provider,
-  spm,
-}: TrackLoginOrSignupClickedParams) => {
+export const trackLoginOrSignupClicked = ({ provider, spm }: TrackLoginOrSignupClickedParams) => {
   const analytics = getSingletonAnalyticsOptional();
   if (!analytics) return Promise.resolve();
 
@@ -19,9 +18,12 @@ export const trackLoginOrSignupClicked = ({
       await analytics.initialize();
     }
 
+    const lhCid = resolveLandingClickId();
+
     await analytics.track({
       name: 'login_or_signup_clicked',
       properties: {
+        ...(lhCid && { lh_cid: lhCid }),
         ...(provider && { provider }),
         spm,
       },

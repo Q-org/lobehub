@@ -43,8 +43,123 @@ export interface HeterogeneousAgentEvent {
 /** Data shape for stream_start events */
 export interface StreamStartData {
   assistantMessage?: { id: string };
+  /**
+   * External-trigger context for the step opened by this stream_start.
+   * Set when the new step was opened in response to a repeated tool
+   * result on the same `tool_use.id` (Monitor stdout push pattern) or
+   * other out-of-band callback — i.e. NOT a fresh user message.
+   *
+   * Executor stamps this onto the new assistant message's
+   * `metadata.signal` so MessageCollector can collect signal-tagged
+   * toolless assistants into a SignalCallbacksNode.
+   *
+   * Phase 2 () promotes the persisted shape to a dedicated
+   * `messages.signal` column; the event peer field name stays
+   * `externalSignal` regardless.
+   */
+  externalSignal?: ExternalSignalContext;
   model?: string;
   provider?: string;
+}
+
+/**
+ * Carried as a peer field on stream events when the LLM turn was
+ * triggered by an external signal rather than a fresh user message.
+ *
+ * Canonical case: CC's Monitor tool keeps pushing additional stdout
+ * lines as `tool_result` blocks on the SAME `tool_use.id`, each push
+ * driving a new assistant turn. Future variants will cover webhook
+ * callbacks, scheduled triggers, and agent-signal sources.
+ *
+ * The adapter detects these patterns by counting tool_results per
+ * `tool_use.id`; the executor writes the context to
+ * `message.metadata.signal`; the conversation-flow collector groups
+ * signal-tagged toolless assistants into a SignalCallbacksNode.
+ */
+export interface ExternalSignalContext {
+  /** Nth push from the same source (1 = first repeat result). */
+  sequence?: number;
+  /** Source `tool_use.id` (CC) / function call id whose repeat fired this signal. */
+  sourceToolCallId: string;
+  /** Tool name for UI labelling, e.g. `Monitor`. */
+  sourceToolName: string;
+  /**
+   * Discriminator for the trigger source — wire-stable.
+   *
+   * - `tool-stdout`: Monitor / long-running-tool stdout push pattern —
+   *   each turn is a reactive reply to a stdout event.
+   * - `tool-callback`: (future) one-shot async callback variant.
+   * - `task-completion`: the post-task summary turn — fired by the LLM
+   *   after CC delivers `system task_notification` (and the implicit
+   *   "task ended" user event). Carries the same `sourceTool*` lineage
+   *   as the preceding callbacks so the renderer can keep the summary
+   *   inside the same AssistantGroup (appended after the SignalCallbacks
+   *   block), instead of letting it spawn a separate group.
+   *
+   * Future webhook / scheduled / agent-signal-source variants land
+   * here as the pipeline absorbs more upstreams.
+   */
+  type: 'tool-stdout' | 'tool-callback' | 'task-completion';
+}
+
+/**
+ * Adapter-extracted spawn metadata, attached to the FIRST event the
+ * adapter emits for a new subagent run (keyed by `parentToolCallId`).
+ * Lets the executor lazy-create the subagent Thread on first sight
+ * without needing to know about adapter-specific tool names (CC `Task`,
+ * Codex subtask, ...) or parse `tool_use.input`.
+ *
+ * Absent on subsequent events for the same parent.
+ */
+export interface SubagentSpawnMetadata {
+  /** Short label / title for the spawn (CC Task's `description`). */
+  description?: string;
+  /**
+   * Initial user-message content for the subagent Thread (CC Task's
+   * `prompt`). The executor writes this as the Thread's `role:'user'`
+   * message so the subagent's conversation is reconstructable as a
+   * standalone chat.
+   */
+  prompt?: string;
+  /** Subagent template label (CC Task's `subagent_type`). */
+  subagentType?: string;
+}
+
+/**
+ * Subagent-origination context, carried as a peer field on event `data`
+ * (NOT on `ToolCallPayload`). A stream event originating from a subagent
+ * turn — CC `Task` spawn, Codex subtask, ... — stamps this on the chunk
+ * so the executor can route the batch of tools / the tool_result into the
+ * right Thread + subagent assistant message. Per-event scope: all tools
+ * in the same chunk share the same parent / turn ids, so the info
+ * describes the containing chunk, not individual payloads.
+ *
+ * Main-agent events leave `subagent` undefined.
+ */
+export interface SubagentEventContext {
+  /**
+   * The main-agent tool_use id that spawned this subagent (CC Task's
+   * tool_use.id). Persistent across the entire subagent run; used by the
+   * executor to look up the Thread for this spawn.
+   */
+  parentToolCallId: string;
+  /**
+   * Spawn metadata — present only on the FIRST event the adapter emits
+   * for a given `parentToolCallId`, absent on subsequent events. The
+   * executor uses this to create the subagent Thread + seed its
+   * `role:'user'` message the moment it first sees subagent activity,
+   * without re-parsing the Task tool_use input or knowing CC-specific
+   * argument shapes.
+   */
+  spawnMetadata?: SubagentSpawnMetadata;
+  /**
+   * The subagent CLI's message.id for THIS turn. Set on `tools_calling`
+   * / `tool_start` chunks where the executor needs to detect turn
+   * boundaries (change triggers a new assistant message inside the
+   * Thread). Omitted on `tool_result` / `tool_end` where the turn is
+   * already established by the corresponding tool_use.
+   */
+  subagentMessageId?: string;
 }
 
 /** Data shape for stream_chunk events */
@@ -52,12 +167,20 @@ export interface StreamChunkData {
   chunkType: StreamChunkType;
   content?: string;
   reasoning?: string;
+  /**
+   * Subagent context for the entire chunk — peer to `toolsCalling`,
+   * `content`, and `reasoning`. Stream-state info (parent spawn id,
+   * subagent turn id) belongs on the event, not inside the payloads.
+   */
+  subagent?: SubagentEventContext;
   toolsCalling?: ToolCallPayload[];
 }
 
 /** Data shape for tool_end events */
 export interface ToolEndData {
   isSuccess: boolean;
+  /** Subagent context if this tool_end belongs to a subagent inner tool. */
+  subagent?: SubagentEventContext;
   toolCallId: string;
 }
 
@@ -72,10 +195,19 @@ export interface ToolResultData {
    * without each consumer re-parsing tool args.
    */
   pluginState?: Record<string, any>;
+  /** Subagent context if this tool_result belongs to a subagent inner tool. */
+  subagent?: SubagentEventContext;
   toolCallId: string;
 }
 
-/** Tool call payload (matches ChatToolPayload shape) */
+/**
+ * Tool call payload (matches ChatToolPayload shape).
+ *
+ * Kept minimal and stream/persistence-agnostic: no subagent lineage,
+ * no turn ids, no spawn markers. Those live on the containing event's
+ * `subagent` peer field ({@link SubagentEventContext}) because they
+ * describe the chunk's origin, not the tool call itself.
+ */
 export interface ToolCallPayload {
   apiName: string;
   arguments: string;
@@ -126,6 +258,33 @@ export interface StepCompleteData {
   usage?: UsageData;
 }
 
+export interface HeterogeneousRateLimitInfo {
+  isUsingOverage?: boolean;
+  overageDisabledReason?: string;
+  overageStatus?: string;
+  rateLimitType?: string;
+  resetsAt?: number;
+  status?: string;
+}
+
+/**
+ * Normalized terminal error payload emitted by adapters when the upstream CLI
+ * exposes enough context to classify the failure. The executor can persist
+ * this directly as a `ChatMessageError` body without re-parsing provider-
+ * specific stderr shapes.
+ */
+export interface HeterogeneousTerminalErrorData {
+  agentType?: string;
+  clearEchoedContent?: boolean;
+  code?: string;
+  docsUrl?: string;
+  error?: string;
+  installCommands?: readonly string[];
+  message: string;
+  rateLimitInfo?: HeterogeneousRateLimitInfo;
+  stderr?: string;
+}
+
 // ─── Adapter Interface ───
 
 /**
@@ -166,17 +325,4 @@ export interface AgentProcessConfig {
   cwd?: string;
   /** Environment variables */
   env?: Record<string, string>;
-}
-
-/**
- * Registry of built-in CLI flag presets per agent type.
- * The Electron controller uses this to construct the full spawn args.
- */
-export interface AgentCLIPreset {
-  /** Base CLI arguments (e.g., ['-p', '--output-format', 'stream-json', '--verbose']) */
-  baseArgs: string[];
-  /** How to pass the prompt (e.g., 'positional' = last arg, 'stdin' = pipe to stdin) */
-  promptMode: 'positional' | 'stdin';
-  /** How to resume a session (e.g., ['--resume', '{sessionId}']) */
-  resumeArgs?: (sessionId: string) => string[];
 }

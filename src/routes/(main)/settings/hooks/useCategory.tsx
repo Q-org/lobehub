@@ -2,7 +2,7 @@ import { isDesktop } from '@lobechat/const';
 import { Avatar } from '@lobehub/ui';
 import { SkillsIcon } from '@lobehub/ui/icons';
 import {
-  // BellIcon,
+  BellIcon,
   Brain,
   BrainCircuit,
   ChartColumnBigIcon,
@@ -17,6 +17,8 @@ import {
   KeyIcon,
   KeyRound,
   Map,
+  MessageCircleIcon,
+  MonitorSmartphoneIcon,
   PaletteIcon,
   Sparkles,
   TerminalSquare,
@@ -44,6 +46,8 @@ export enum SettingsGroupKey {
 }
 
 export interface CategoryItem {
+  /** Override the navigation URL. When omitted, Body derives the URL from `key`. */
+  href?: string;
   icon: any;
   key: SettingsTabs;
   label: string;
@@ -60,7 +64,7 @@ export const useCategory = () => {
   const { t: tAuth } = useTranslation('auth');
   const { t: tSubscription } = useTranslation('subscription');
   const mobile = useServerConfigStore((s) => s.isMobile);
-  const { hideDocs, showApiKeyManage } = useServerConfigStore(featureFlagsSelectors);
+  const { hideDocs, showApiKeyManage, showProvider } = useServerConfigStore(featureFlagsSelectors);
   const [avatar, username] = useUserStore((s) => [
     userProfileSelectors.userAvatar(s),
     userProfileSelectors.nickName(s),
@@ -84,7 +88,7 @@ export const useCategory = () => {
       {
         icon: avatarUrl ? <Avatar avatar={avatarUrl} shape={'square'} size={26} /> : undefined,
         key: SettingsTabs.Profile,
-        label: username ? username : tAuth('tab.profile'),
+        label: username || tAuth('tab.profile'),
       },
       {
         icon: ChartColumnBigIcon,
@@ -96,17 +100,21 @@ export const useCategory = () => {
         key: SettingsTabs.Appearance,
         label: t('tab.appearance'),
       },
+      {
+        icon: MonitorSmartphoneIcon,
+        key: SettingsTabs.Devices,
+        label: t('tab.devices'),
+      },
       !mobile && {
         icon: KeyboardIcon,
         key: SettingsTabs.Hotkey,
         label: t('tab.hotkey'),
       },
-      // TODO: temporarily disabled until notification UI is polished
-      // enableBusinessFeatures && {
-      //   icon: BellIcon,
-      //   key: SettingsTabs.Notification,
-      //   label: t('tab.notification'),
-      // },
+      enableBusinessFeatures && {
+        icon: BellIcon,
+        key: SettingsTabs.Notification,
+        label: t('tab.notification'),
+      },
     ].filter(Boolean) as CategoryItem[];
 
     groups.push({
@@ -115,7 +123,9 @@ export const useCategory = () => {
       title: t('group.common'),
     });
 
-    // Subscription group
+    // Personal subscription / billing items. Always shown when business
+    // features are enabled — workspace settings live under a separate
+    // `/:workspaceSlug/settings/*` surface and never share this sidebar.
     if (enableBusinessFeatures) {
       const subscriptionItems: CategoryItem[] = [
         { icon: Map, key: SettingsTabs.Plans, label: tSubscription('tab.plans') },
@@ -134,7 +144,9 @@ export const useCategory = () => {
 
     // Agent group
     const agentItems: CategoryItem[] = [
-      (!enableBusinessFeatures || isDevMode) && {
+      // Provider settings should not depend on Advanced tools: new users may need
+      // non-LobeHub providers, and desktop users often bring their own API keys.
+      showProvider && {
         icon: Brain,
         key: SettingsTabs.Provider,
         label: t('tab.provider'),
@@ -163,6 +175,11 @@ export const useCategory = () => {
         icon: KeyIcon,
         key: SettingsTabs.APIKey,
         label: tAuth('tab.apikey'),
+      },
+      {
+        icon: MessageCircleIcon,
+        key: SettingsTabs.Messenger,
+        label: t('tab.messenger'),
       },
     ].filter(Boolean) as CategoryItem[];
 
@@ -221,6 +238,7 @@ export const useCategory = () => {
     hideDocs,
     mobile,
     showApiKeyManage,
+    showProvider,
     isDevMode,
     avatarUrl,
     username,

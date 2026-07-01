@@ -1,5 +1,5 @@
 import console from 'node:console';
-import { join } from 'node:path';
+import path from 'node:path';
 
 import { APP_WINDOW_MIN_SIZE } from '@lobechat/desktop-bridge';
 import type { MainBroadcastEventKey, MainBroadcastParams } from '@lobechat/electron-client-ipc';
@@ -7,8 +7,7 @@ import type { BrowserWindowConstructorOptions } from 'electron';
 import { app, BrowserWindow, ipcMain, screen, session as electronSession, shell } from 'electron';
 
 import { preloadDir, resourcesDir } from '@/const/dir';
-import { isMac } from '@/const/env';
-import { ELECTRON_BE_PROTOCOL_SCHEME } from '@/const/protocol';
+import { DESKTOP_EXTERNAL_NAVIGATION_HOSTS, isMac } from '@/const/env';
 import RemoteServerConfigCtr from '@/controllers/RemoteServerConfigCtr';
 import { backendProxyProtocolManager } from '@/core/infrastructure/BackendProxyProtocolManager';
 import { appendVercelCookie, setResponseHeader } from '@/utils/http-headers';
@@ -19,6 +18,31 @@ import { WindowStateManager } from './WindowStateManager';
 import { WindowThemeManager } from './WindowThemeManager';
 
 const logger = createLogger('core:Browser');
+
+const getExternalNavigationHosts = () =>
+  DESKTOP_EXTERNAL_NAVIGATION_HOSTS.split(',')
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean);
+
+const shouldOpenTopLevelNavigationExternally = (rawUrl: string) => {
+  const externalNavigationHosts = getExternalNavigationHosts();
+  if (externalNavigationHosts.length === 0) return false;
+
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+
+  const hostname = url.hostname.toLowerCase();
+
+  return externalNavigationHosts.some(
+    (externalHost) => hostname === externalHost || hostname.endsWith(`.${externalHost}`),
+  );
+};
 
 // ==================== Types ====================
 
@@ -139,7 +163,7 @@ export default class Browser {
       webPreferences: {
         backgroundThrottling: false,
         contextIsolation: true,
-        preload: join(preloadDir, 'index.js'),
+        preload: path.join(preloadDir, 'index.js'),
         sandbox: false,
         webviewTag: true,
       },
@@ -195,8 +219,25 @@ export default class Browser {
     this.setupReadyToShowListener(browserWindow);
     this.setupCloseListener(browserWindow);
     this.setupFocusListener(browserWindow);
+    this.setupFullscreenListener(browserWindow);
+    this.setupTopLevelNavigationListener(browserWindow);
     this.setupWillPreventUnloadListener(browserWindow);
     this.setupContextMenu(browserWindow);
+  }
+
+  private setupTopLevelNavigationListener(browserWindow: BrowserWindow): void {
+    logger.debug(`[${this.identifier}] Setting up top-level navigation listener.`);
+
+    browserWindow.webContents.on('will-navigate', (event, url) => {
+      if (!shouldOpenTopLevelNavigationExternally(url)) return;
+
+      logger.info(`[${this.identifier}] Opening top-level navigation externally: ${url}`);
+      event.preventDefault();
+
+      shell.openExternal(url).catch((error) => {
+        logger.error(`[${this.identifier}] Failed to open external navigation URL: ${url}`, error);
+      });
+    });
   }
 
   /**
@@ -238,7 +279,7 @@ export default class Browser {
       logger.debug(`[${this.identifier}] Window 'ready-to-show' event fired.`);
       if (this.options.showOnInit) {
         logger.debug(`Showing window ${this.identifier} because showOnInit is true.`);
-        browserWindow.show();
+        this.show();
       } else {
         logger.debug(`Window ${this.identifier} not shown because showOnInit is false.`);
       }
@@ -269,6 +310,18 @@ export default class Browser {
     });
   }
 
+  private setupFullscreenListener(browserWindow: BrowserWindow): void {
+    logger.debug(`[${this.identifier}] Setting up fullscreen event listeners.`);
+
+    browserWindow.on('enter-full-screen', () => {
+      this.broadcast('windowFullscreenChanged', { isFullScreen: true });
+    });
+
+    browserWindow.on('leave-full-screen', () => {
+      this.broadcast('windowFullscreenChanged', { isFullScreen: false });
+    });
+  }
+
   /**
    * Setup context menu with platform-specific features
    * Delegates to MenuManager for consistent platform behavior
@@ -296,6 +349,7 @@ export default class Browser {
 
   show(): void {
     logger.debug(`Showing window: ${this.identifier}`);
+    this.ensureForegroundAppOnMac();
     if (!this._browserWindow?.isDestroyed()) {
       this.determineWindowPosition();
     }
@@ -328,7 +382,7 @@ export default class Browser {
     if (this._browserWindow?.isVisible() && this._browserWindow.isFocused()) {
       this.hide();
     } else {
-      this._browserWindow?.show();
+      this.show();
       this._browserWindow?.focus();
     }
   }
@@ -387,11 +441,22 @@ export default class Browser {
     this._browserWindow!.setPosition(newX, newY, false);
   }
 
+  private ensureForegroundAppOnMac(): void {
+    if (!isMac || this.identifier !== 'app') return;
+
+    try {
+      app.setActivationPolicy('regular');
+      app.dock?.show();
+    } catch (error) {
+      logger.warn(`[${this.identifier}] Failed to restore regular activation policy:`, error);
+    }
+  }
+
   // ==================== Content Loading ====================
 
   loadPlaceholder = async (): Promise<void> => {
     logger.debug(`[${this.identifier}] Loading splash screen placeholder`);
-    await this._browserWindow!.loadFile(join(resourcesDir, 'splash.html'));
+    await this._browserWindow!.loadFile(path.join(resourcesDir, 'splash.html'));
     logger.debug(`[${this.identifier}] Splash screen placeholder loaded.`);
   };
 
@@ -422,7 +487,7 @@ export default class Browser {
   private async handleLoadError(urlWithLocale: string): Promise<void> {
     try {
       logger.info(`[${this.identifier}] Attempting to load error page...`);
-      await this._browserWindow!.loadFile(join(resourcesDir, 'error.html'));
+      await this._browserWindow!.loadFile(path.join(resourcesDir, 'error.html'));
       logger.info(`[${this.identifier}] Error page loaded successfully.`);
 
       this.setupRetryHandler(urlWithLocale);
@@ -445,7 +510,7 @@ export default class Browser {
       } catch (err: any) {
         logger.error(`[${this.identifier}] Retry connection failed:`, err);
         try {
-          await this._browserWindow?.loadFile(join(resourcesDir, 'error.html'));
+          await this._browserWindow?.loadFile(path.join(resourcesDir, 'error.html'));
         } catch (loadErr) {
           logger.error(`[${this.identifier}] Failed to reload error page:`, loadErr);
         }
@@ -549,7 +614,10 @@ export default class Browser {
   }
 
   /**
-   * Rewrite tRPC requests to remote server and inject OIDC token
+   * Bind this window's session to the backend proxy. The `app://` request
+   * interceptor (wired in `App.ts`) consumes this context to route
+   * `/trpc`, `/webapi`, `/api/auth`, and `/market` requests to the remote
+   * LobeHub server.
    */
   private setupRemoteServerRequestHook(browserWindow: BrowserWindow): void {
     const session = browserWindow.webContents.session;
@@ -565,7 +633,6 @@ export default class Browser {
         const remoteServerUrl = await remoteServerConfigCtr.getRemoteServerUrl(config);
         return remoteServerUrl || null;
       },
-      scheme: ELECTRON_BE_PROTOCOL_SCHEME,
       source: this.identifier,
     });
   }

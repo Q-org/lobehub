@@ -2,14 +2,13 @@
 
 ## Quick Reference by Name
 
-- **@arvinxx**: Last resort only, mention for priority:high issues, tool calling, mcp, database
+- **@arvinxx**: General/uncategorized issues (default assignee), priority:high issues, tool calling, mcp, database
 - **@canisminor1990**: Design, UI components, editor, markdown rendering
-- **@tjx666**: Image/video generation, vision, cloud version, documentation, TTS, auth, login/register, database
-- **@ONLY-yours**: Performance, streaming, settings, general bugs, web platform, marketplace, agent builder, schedule task
+- **@tjx666**: Model providers and configuration, new model additions, image/video generation, vision, cloud version, documentation, TTS, auth, login/register, database
+- **@ONLY-yours**: Performance, streaming, settings, web platform, marketplace, agent builder, schedule task
 - **@Innei**: Knowledge base, files (KB-related), group chat, Electron, desktop client, build system
 - **@nekomeowww**: Memory, backend, deployment, DevOps, database
 - **@sudongyuer**: Mobile app (React Native)
-- **@sxjeru**: Model providers and configuration
 - **@rdmclin2**: Team workspace, IM and bot integration
 - **@tcmonster**: Subscription, refund, recharge, business cooperation
 
@@ -21,7 +20,7 @@ Quick reference for assigning issues based on labels.
 
 | Label            | Owner   | Notes                                        |
 | ---------------- | ------- | -------------------------------------------- |
-| All `provider:*` | @sxjeru | Model configuration and provider integration |
+| All `provider:*` | @tjx666 | Model configuration and provider integration |
 
 ### Platform Labels (platform:\*)
 
@@ -100,11 +99,10 @@ Quick reference for assigning issues based on labels.
 
 1. **Specific feature owner** - e.g., `feature:knowledge-base` → @RiverTwilight
 2. **Platform owner** - e.g., `platform:mobile` → @sudongyuer
-3. **Provider owner** - e.g., `provider:*` → @sxjeru
+3. **Provider owner** - e.g., `provider:*` → @tjx666
 4. **Component owner** - e.g., 💄 Design → @canisminor1990
 5. **Infrastructure owner** - e.g., `deployment:*` → @nekomeowww
-6. **General maintainer** - @ONLY-yours for general bugs/issues
-7. **Last resort** - @arvinxx (only if no clear owner)
+6. **Default assignee** - @arvinxx for general/uncategorized issues
 
 ### Special Cases
 
@@ -121,8 +119,16 @@ Quick reference for assigning issues based on labels.
 
 **No clear owner:**
 
-- Assign to @ONLY-yours for general issues
-- Only mention @arvinxx if critical and truly unclear
+- Assign to @arvinxx for general issues
+
+**MCP marketplace listing/submission requests — do NOT mention (auto-handled):**
+
+Requests to **add / submit / list a new MCP server** to the marketplace are now processed automatically by the **MCP Submission Handler** workflow (it redirects installable servers to the self-service CLI and closes them, and labels remote-only servers `mcp:remote` for manual review). For these, **do NOT post any @mention comment — apply labels only.**
+
+- Recognize them by: titles like `[Request] Add <name> to the MCP marketplace`, `[MCP] Add/Submit <name>`, `[MCP Submission] …`, `[MCP Plugin] …`; the body asks to list/index a specific MCP server and links its repo or endpoint.
+- This does **NOT** apply to the following — they still get a normal @mention:
+  - Bugs about the marketplace pipeline or an existing listing — e.g. "scoring stuck", "shows outdated version", "rescan/re-index listing", "not syncing". → `@ONLY-yours @arvinxx`
+  - Feature requests about the marketplace product itself (search, catalog browser, etc.). → `@ONLY-yours`
 
 ## Comment Templates
 

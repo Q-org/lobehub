@@ -1,26 +1,136 @@
-import { getLobehubSkillProviderById } from '@lobechat/const';
+import { getComposioAppByIdentifier, getLobehubSkillProviderById } from '@lobechat/const';
 import type { BuiltinToolContext, BuiltinToolResult } from '@lobechat/types';
 import { BaseExecutor } from '@lobechat/types';
 import debug from 'debug';
 
 import { lambdaClient, toolsClient } from '@/libs/trpc/client';
+import { getToolStoreState, useToolStore } from '@/store/tool';
+import { composioStoreSelectors } from '@/store/tool/selectors';
+import { ComposioServerStatus } from '@/store/tool/slices/composioStore/types';
 import { useUserStore } from '@/store/user';
 import { userProfileSelectors } from '@/store/user/slices/auth/selectors';
 
 import { CredsIdentifier } from '../manifest';
-import {
-  CredsApiName,
-  type GetPlaintextCredParams,
-  type InitiateOAuthConnectParams,
-  type InjectCredsToSandboxParams,
-  type SaveCredsParams,
+import type {
+  ConnectComposioServiceParams,
+  InitiateOAuthConnectParams,
+  InjectCredsToSandboxParams,
+  SaveCredsParams,
 } from '../types';
+import { CredsApiName, LOBEHUB_OAUTH_PROVIDER_LIST } from '../types';
 
 const log = debug('lobe-creds:executor');
 
 class CredsExecutor extends BaseExecutor<typeof CredsApiName> {
   readonly identifier = CredsIdentifier;
   protected readonly apiEnum = CredsApiName;
+
+  /**
+   * Connect a Composio integration service via OAuth
+   * Creates a Composio connection and initiates the OAuth flow
+   */
+  connectComposioService = async (
+    params: ConnectComposioServiceParams,
+    _ctx?: BuiltinToolContext,
+  ): Promise<BuiltinToolResult> => {
+    try {
+      const { service } = params;
+
+      // Validate service identifier
+      const appType = getComposioAppByIdentifier(service);
+      if (!appType) {
+        return {
+          error: {
+            message: `Unknown Composio service: "${service}". Check the available Composio services list in the credentials context.`,
+            type: 'UnknownService',
+          },
+          success: false,
+        };
+      }
+
+      // Check if already connected via store
+      const toolState = getToolStoreState();
+      const existingServer = composioStoreSelectors.getServerByIdentifier(service)(toolState);
+      if (existingServer?.status === ComposioServerStatus.ACTIVE) {
+        return {
+          content: `Already connected to ${appType.label}. You can use ${appType.label} tools directly.`,
+          state: {
+            connected: true,
+            identifier: service,
+            serviceName: appType.label,
+          },
+          success: true,
+        };
+      }
+
+      log('[CredsExecutor] connectComposioService - creating connection for:', service);
+
+      // Create Composio connection (authConfigId managed server-side)
+      const server = await useToolStore.getState().createComposioConnection({
+        appSlug: appType.appSlug,
+        identifier: appType.identifier,
+        label: appType.label,
+      });
+
+      if (!server) {
+        return {
+          error: {
+            message: `Failed to create Composio connection for ${appType.label}`,
+            type: 'CreateServerFailed',
+          },
+          success: false,
+        };
+      }
+
+      // If already active (no OAuth needed)
+      if (server.status === ComposioServerStatus.ACTIVE) {
+        return {
+          content: `Successfully connected to ${appType.label}! You can now use ${appType.label} tools.`,
+          state: {
+            connected: true,
+            identifier: service,
+            serviceName: appType.label,
+          },
+          success: true,
+        };
+      }
+
+      // OAuth needed — return the authorization link for the user to open.
+      // This tool runs from the agent's response, which carries no user gesture,
+      // so the browser would block any popup we tried to open ourselves. Handing
+      // back the link lets the user click it (a real gesture) to authorize; the
+      // connection moves to ACTIVE once they finish.
+      if (server.redirectUrl) {
+        return {
+          content: `To connect ${appType.label}, ask the user to open this authorization link and complete the sign-in:\n\n${server.redirectUrl}\n\nOnce they have authorized, ${appType.label} tools will be ready to use.`,
+          state: {
+            connected: false,
+            identifier: service,
+            redirectUrl: server.redirectUrl,
+            serviceName: appType.label,
+          },
+          success: true,
+        };
+      }
+
+      return {
+        error: {
+          message: 'Unexpected server state: no redirectUrl and not active',
+          type: 'UnexpectedState',
+        },
+        success: false,
+      };
+    } catch (error) {
+      log('[CredsExecutor] connectComposioService - error:', error);
+      return {
+        error: {
+          message: error instanceof Error ? error.message : 'Failed to connect Composio service',
+          type: 'ConnectComposioFailed',
+        },
+        success: false,
+      };
+    }
+  };
 
   /**
    * Initiate OAuth connection flow
@@ -38,7 +148,7 @@ class CredsExecutor extends BaseExecutor<typeof CredsApiName> {
       if (!providerConfig) {
         return {
           error: {
-            message: `Unknown OAuth provider: ${provider}. Available providers: github, linear, microsoft, twitter`,
+            message: `Unknown OAuth provider: ${provider}. Available providers: ${LOBEHUB_OAUTH_PROVIDER_LIST}`,
             type: 'UnknownProvider',
           },
           success: false,
@@ -59,7 +169,11 @@ class CredsExecutor extends BaseExecutor<typeof CredsApiName> {
       }
 
       // Get the authorization URL from the market API
-      const redirectUri = `${typeof window !== 'undefined' ? window.location.origin : ''}/oauth/callback/success?provider=${provider}`;
+      // Skip redirectUri on desktop (app:// protocol) since the system browser can't navigate to it
+      const redirectUri =
+        typeof window !== 'undefined' && window.location.protocol.startsWith('http')
+          ? `${window.location.origin}/oauth/callback/success?provider=${provider}`
+          : undefined;
       const response = await toolsClient.market.connectGetAuthorizeUrl.query({
         provider,
         redirectUri,
@@ -172,98 +286,6 @@ class CredsExecutor extends BaseExecutor<typeof CredsApiName> {
         5 * 60 * 1000,
       );
     });
-  };
-
-  /**
-   * Get plaintext credential value by key
-   */
-  getPlaintextCred = async (
-    params: GetPlaintextCredParams,
-    _ctx?: BuiltinToolContext,
-  ): Promise<BuiltinToolResult> => {
-    try {
-      log('[CredsExecutor] getPlaintextCred - key:', params.key);
-
-      // Get the decrypted credential directly by key
-      const result = await lambdaClient.market.creds.getByKey.query({
-        decrypt: true,
-        key: params.key,
-      });
-
-      const credType = (result as any).type;
-      const credName = (result as any).name || params.key;
-
-      log('[CredsExecutor] getPlaintextCred - type:', credType);
-
-      // Handle file type credentials
-      if (credType === 'file') {
-        const fileUrl = (result as any).fileUrl;
-        const fileName = (result as any).fileName;
-
-        log('[CredsExecutor] getPlaintextCred - fileUrl:', fileUrl ? 'present' : 'missing');
-
-        if (!fileUrl) {
-          return {
-            content: `File credential "${credName}" (key: ${params.key}) found but file URL is not available.`,
-            error: {
-              message: 'File URL not available',
-              type: 'FileUrlNotAvailable',
-            },
-            success: false,
-          };
-        }
-
-        return {
-          content: `Successfully retrieved file credential "${credName}" (key: ${params.key}). File: ${fileName || 'unknown'}. The file download URL is available in the state.`,
-          state: {
-            fileName,
-            fileUrl,
-            key: params.key,
-            name: credName,
-            type: 'file',
-          },
-          success: true,
-        };
-      }
-
-      // Handle KV types (kv-env, kv-header, oauth)
-      // Market API returns 'plaintext' field, SDK might transform to 'values'
-      const values = (result as any).values || (result as any).plaintext || {};
-      const valueKeys = Object.keys(values);
-
-      log('[CredsExecutor] getPlaintextCred - result keys:', valueKeys);
-
-      // Return content with masked values for security, but include actual values in state
-      const maskedValues = valueKeys.map((k) => `${k}: ****`).join(', ');
-
-      return {
-        content: `Successfully retrieved credential "${credName}" (key: ${params.key}). Contains ${valueKeys.length} value(s): ${maskedValues}. The actual values are available in the state for use.`,
-        state: {
-          key: params.key,
-          name: credName,
-          type: credType,
-          values,
-        },
-        success: true,
-      };
-    } catch (error) {
-      log('[CredsExecutor] getPlaintextCred - error:', error);
-
-      // Check if it's a NOT_FOUND error
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      const isNotFound = errorMessage.includes('not found') || errorMessage.includes('NOT_FOUND');
-
-      return {
-        content: isNotFound
-          ? `Credential not found: ${params.key}. Please check if the credential exists in Settings > Credentials.`
-          : `Failed to get credential: ${errorMessage}`,
-        error: {
-          message: errorMessage,
-          type: isNotFound ? 'CredentialNotFound' : 'GetCredentialFailed',
-        },
-        success: false,
-      };
-    }
   };
 
   /**

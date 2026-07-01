@@ -1,18 +1,30 @@
-import { Flexbox, Icon, Skeleton, Tag } from '@lobehub/ui';
+import { GROUP_CHAT_TOPIC_URL } from '@lobechat/const';
+import type { ChatTopicStatus } from '@lobechat/types';
+import { Flexbox, Icon, Skeleton, Tag, Text, Tooltip } from '@lobehub/ui';
 import { createStaticStyles, cssVar } from 'antd-style';
-import { HashIcon, Loader2Icon, MessageSquareDashed } from 'lucide-react';
+import {
+  CheckCircle2,
+  Hand,
+  HashIcon,
+  Loader2Icon,
+  MessageSquareDashed,
+  TriangleAlert,
+} from 'lucide-react';
 import { AnimatePresence, m } from 'motion/react';
-import { memo, Suspense, useCallback, useMemo, useRef } from 'react';
+import { memo, Suspense, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useActiveWorkspaceSlug } from '@/business/client/hooks/useActiveWorkspaceSlug';
 import DotsLoading from '@/components/DotsLoading';
 import { isDesktop } from '@/const/version';
-import { pluginRegistry } from '@/features/Electron/titlebar/RecentlyViewed/plugins';
+import { useHasDraft } from '@/features/ChatInput/draftStorage';
 import NavItem from '@/features/NavPanel/components/NavItem';
 import { useFocusTopicPopup } from '@/features/TopicPopupGuard/useTopicPopupsRegistry';
+import { buildWorkspaceAwarePath } from '@/features/Workspace/workspaceAwarePath';
 import { useAgentGroupStore } from '@/store/agentGroup';
 import { useChatStore } from '@/store/chat';
 import { operationSelectors } from '@/store/chat/selectors';
+import { messageMapKey } from '@/store/chat/utils/messageMapKey';
 import { useElectronStore } from '@/store/electron';
 import { useGlobalStore } from '@/store/global';
 
@@ -57,26 +69,40 @@ const styles = createStaticStyles(({ css }) => ({
   `,
 }));
 
+// Module-scoped so a click on any topic cancels a pending click on another.
+// Per-item refs can't do that, which lets rapid clicks across items all
+// fire — each racing to write activeTopicId (see ).
+let pendingSingleClickTimer: ReturnType<typeof setTimeout> | null = null;
+
+const cancelPendingSingleClick = () => {
+  if (pendingSingleClickTimer) {
+    clearTimeout(pendingSingleClickTimer);
+    pendingSingleClickTimer = null;
+  }
+};
+
 interface TopicItemProps {
   active?: boolean;
   fav?: boolean;
   id?: string;
+  status?: ChatTopicStatus | null;
   threadId?: string;
   title: string;
 }
 
-const TopicItem = memo<TopicItemProps>(({ id, title, fav, active, threadId }) => {
+const TopicItem = memo<TopicItemProps>(({ id, title, fav, active, threadId, status }) => {
   const { t } = useTranslation('topic');
   const toggleMobileTopic = useGlobalStore((s) => s.toggleMobileTopic);
   const [activeGroupId, switchTopic] = useAgentGroupStore((s) => [s.activeGroupId, s.switchTopic]);
   const addTab = useElectronStore((s) => s.addTab);
+  const activeWorkspaceSlug = useActiveWorkspaceSlug();
   const focusTopicPopup = useFocusTopicPopup({ groupId: activeGroupId });
 
   // Construct href for cmd+click support
   const href = useMemo(() => {
     if (!activeGroupId || !id) return undefined;
-    return `/group/${activeGroupId}?topic=${id}`;
-  }, [activeGroupId, id]);
+    return buildWorkspaceAwarePath(GROUP_CHAT_TOPIC_URL(activeGroupId, id), activeWorkspaceSlug);
+  }, [activeGroupId, activeWorkspaceSlug, id]);
 
   const [editing, isLoading] = useChatStore((s) => [
     id ? s.topicRenamingId === id : false,
@@ -94,13 +120,12 @@ const TopicItem = memo<TopicItemProps>(({ id, title, fav, active, threadId }) =>
     [id],
   );
 
-  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const handleClick = useCallback(() => {
     if (editing) return;
     if (isDesktop) {
-      clickTimerRef.current = setTimeout(() => {
-        clickTimerRef.current = null;
+      cancelPendingSingleClick();
+      pendingSingleClickTimer = setTimeout(() => {
+        pendingSingleClickTimer = null;
         void (async () => {
           await focusTopicPopup(id);
           switchTopic(id);
@@ -118,27 +143,35 @@ const TopicItem = memo<TopicItemProps>(({ id, title, fav, active, threadId }) =>
 
   const handleDoubleClick = useCallback(async () => {
     if (!id || !activeGroupId || !isDesktop) return;
-    if (clickTimerRef.current) {
-      clearTimeout(clickTimerRef.current);
-      clickTimerRef.current = null;
-    }
+    cancelPendingSingleClick();
     if (await focusTopicPopup(id)) {
       switchTopic(id);
       toggleMobileTopic(false);
       return;
     }
-    const reference = pluginRegistry.parseUrl(`/group/${activeGroupId}`, `topic=${id}`);
-    if (reference) {
-      addTab(reference);
-      switchTopic(id);
-      toggleMobileTopic(false);
-    }
-  }, [id, activeGroupId, addTab, focusTopicPopup, switchTopic, toggleMobileTopic]);
+    addTab(buildWorkspaceAwarePath(GROUP_CHAT_TOPIC_URL(activeGroupId, id), activeWorkspaceSlug));
+    switchTopic(id);
+    toggleMobileTopic(false);
+  }, [
+    id,
+    activeGroupId,
+    activeWorkspaceSlug,
+    addTab,
+    focusTopicPopup,
+    switchTopic,
+    toggleMobileTopic,
+  ]);
 
   const dropdownMenu = useTopicItemDropdownMenu({
     id,
+    status,
     toggleEditing,
   });
+
+  const isCompleted = status === 'completed';
+  const isFailed = status === 'failed';
+  const isRunning = status === 'running';
+  const isWaitingForHuman = status === 'waitingForHuman';
 
   const hasUnread = id && isUnreadCompleted;
   const infoColor = cssVar.colorInfo;
@@ -182,11 +215,30 @@ const TopicItem = memo<TopicItemProps>(({ id, title, fav, active, threadId }) =>
     </span>
   );
 
+  // Surface a WeChat-style red "[Draft]" hint when this topic holds unsent
+  // input. Group drafts live in localStorage keyed by messageMapKey under the
+  // group scope; the default topic (no id) maps to the new-topic draft.
+  const draftKey = useMemo(
+    () =>
+      activeGroupId
+        ? messageMapKey({ agentId: '', groupId: activeGroupId, scope: 'group', topicId: id })
+        : undefined,
+    [activeGroupId, id],
+  );
+  const hasDraft = useHasDraft(draftKey);
+  const draftPrefix = hasDraft ? (
+    <Text fontSize={12} style={{ color: cssVar.colorError, flex: 'none' }}>
+      {t('draft')}
+    </Text>
+  ) : undefined;
+
   // For default topic (no id)
   if (!id) {
     return (
       <NavItem
         active={active}
+        slots={{ titlePrefix: draftPrefix }}
+        titleColor={cssVar.colorText}
         icon={
           isLoading ? (
             <Icon spin color={cssVar.colorWarning} icon={Loader2Icon} size={'small'} />
@@ -222,15 +274,39 @@ const TopicItem = memo<TopicItemProps>(({ id, title, fav, active, threadId }) =>
         disabled={editing}
         href={!editing ? href : undefined}
         title={title === '...' ? <DotsLoading gap={3} size={4} /> : title}
-        icon={
-          isLoading ? (
-            <Icon spin icon={Loader2Icon} size={'small'} style={{ color: cssVar.colorWarning }} />
-          ) : (
+        titleColor={cssVar.colorText}
+        icon={(() => {
+          if (isWaitingForHuman) {
+            return <Icon icon={Hand} size={'small'} style={{ color: cssVar.colorInfo }} />;
+          }
+          if (isLoading || isRunning) {
+            return (
+              <Icon spin icon={Loader2Icon} size={'small'} style={{ color: cssVar.colorWarning }} />
+            );
+          }
+          if (isFailed) {
+            return (
+              <Tooltip title={t('failedStatusTip')}>
+                <Icon icon={TriangleAlert} size={'small'} style={{ color: cssVar.colorError }} />
+              </Tooltip>
+            );
+          }
+          if (isCompleted) {
+            return (
+              <Icon
+                icon={CheckCircle2}
+                size={'small'}
+                style={{ color: cssVar.colorTextDescription }}
+              />
+            );
+          }
+          return (
             <Icon icon={HashIcon} size={'small'} style={{ color: cssVar.colorTextDescription }} />
-          )
-        }
+          );
+        })()}
         slots={{
           iconPostfix: unreadNode,
+          titlePrefix: draftPrefix,
         }}
         onClick={handleClick}
         onDoubleClick={() => void handleDoubleClick()}

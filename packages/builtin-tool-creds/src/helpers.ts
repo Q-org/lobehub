@@ -86,6 +86,53 @@ export const injectCredsContext = (content: string, context: UserCredsContext): 
     .replaceAll('{{SETTINGS_URL}}', context.settingsUrl);
 };
 
+// ==================== Composio Services ====================
+
+/**
+ * Summary of a Composio service for display in the tool prompt
+ */
+export interface ComposioServiceSummary {
+  description?: string;
+  identifier: string;
+  name: string;
+}
+
+/**
+ * Generate the Composio services list string for injection into the prompt
+ */
+export const generateComposioServicesList = (
+  connected: ComposioServiceSummary[],
+  available: ComposioServiceSummary[],
+): string => {
+  if (connected.length === 0 && available.length === 0) {
+    return '';
+  }
+
+  const sections: string[] = [];
+
+  if (connected.length > 0) {
+    const items = connected
+      .map(
+        (s) =>
+          `  - ${s.name} (identifier: ${s.identifier}) — Authorized via Composio OAuth. Use ${s.identifier} tools directly.`,
+      )
+      .join('\n');
+    sections.push(`**Connected Composio Services (authorized, use tools directly):**\n${items}`);
+  }
+
+  if (available.length > 0) {
+    const items = available
+      .map(
+        (s) =>
+          `  - ${s.name} (identifier: ${s.identifier}) — Use \`connectComposioService\` to connect.`,
+      )
+      .join('\n');
+    sections.push(`**Available Composio Services (not yet connected):**\n${items}`);
+  }
+
+  return sections.join('\n\n');
+};
+
 /**
  * Check if a skill's required credentials are satisfied
  */

@@ -1,5 +1,7 @@
 import type { RuntimeVideoGenParams } from 'model-bank';
 
+import type { ModelPricingContext } from './pricing';
+
 export type CreateVideoErrorPayload = {
   error: any;
   errorType: string;
@@ -11,6 +13,13 @@ export type CreateVideoPayload = {
   model: string;
   params: RuntimeVideoGenParams;
 };
+
+export interface CreateVideoMethodOptions {
+  /** Metadata passed to hooks (billing, tracing, etc.) */
+  metadata?: Record<string, unknown>;
+  /** Request-scoped pricing context for model-bank pricing lookups. */
+  pricingContext?: ModelPricingContext;
+}
 
 export type CreateVideoResponse =
   | {

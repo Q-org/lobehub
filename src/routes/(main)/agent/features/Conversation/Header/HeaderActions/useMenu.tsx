@@ -1,22 +1,72 @@
 'use client';
 
-import { type DropdownItem, Icon } from '@lobehub/ui';
+import type { DropdownItem } from '@lobehub/ui';
+import { Block, Flexbox, Icon, Text } from '@lobehub/ui';
+import { confirmModal, type ModalInstance } from '@lobehub/ui/base-ui';
 import { App } from 'antd';
-import { Copy, ExternalLink, Hash, Maximize2, PencilLine, Star, Trash, Wand2 } from 'lucide-react';
-import { useMemo } from 'react';
+import {
+  Clock3Icon,
+  Copy,
+  ExternalLink,
+  Hash,
+  Maximize2,
+  PencilLine,
+  Star,
+  Trash,
+  Wand2,
+} from 'lucide-react';
+import type { ReactNode } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router';
 
+import { useAuthorInfo } from '@/business/client/hooks/useAuthorInfo';
 import { openRenameModal } from '@/components/RenameModal';
+import { DOCUMENT_HISTORY_QUERY_LIST_LIMIT } from '@/const/documentHistory';
 import { isDesktop } from '@/const/version';
+import { openDocumentCompareModal } from '@/features/PageEditor/History/CompareModal';
+import { formatHistoryAbsoluteTime } from '@/features/PageEditor/History/formatHistoryDate';
+import type {
+  DocumentHistoryListItem,
+  DocumentHistorySaveSource,
+} from '@/server/routers/lambda/_schema/documentHistory';
+import { documentService } from '@/services/document';
 import { useChatStore } from '@/store/chat';
 import { topicSelectors } from '@/store/chat/selectors';
+import { useDocumentStore } from '@/store/document';
 import { useGlobalStore } from '@/store/global';
 import { systemStatusSelectors } from '@/store/global/selectors';
 
-export const useMenu = (): { menuItems: DropdownItem[] } => {
-  const { t } = useTranslation(['chat', 'topic', 'common']);
-  const { modal, message } = App.useApp();
+interface TopicInfoHeaderProps {
+  authorName: string;
+  title: string;
+  updatedAtLabel?: string;
+}
+
+const TopicInfoHeader = ({ authorName, title, updatedAtLabel }: TopicInfoHeaderProps) => (
+  <Block
+    horizontal
+    align={'center'}
+    gap={12}
+    paddingBlock={8}
+    paddingInline={12}
+    style={{ minWidth: 240 }}
+    variant={'borderless'}
+  >
+    <Flexbox flex={1} gap={2} style={{ minWidth: 0, overflow: 'hidden' }}>
+      <Text ellipsis style={{ lineHeight: 1.4 }} weight={'bold'}>
+        {title}
+      </Text>
+      <Text ellipsis fontSize={12} style={{ lineHeight: 1.4 }} type={'secondary'}>
+        {updatedAtLabel ? `${authorName} ${updatedAtLabel}` : authorName}
+      </Text>
+    </Flexbox>
+  </Block>
+);
+
+export const useMenu = (): { menuHeader?: ReactNode; menuItems: DropdownItem[] } => {
+  const { t } = useTranslation(['chat', 'topic', 'common', 'file']);
+  const { message } = App.useApp();
   const { pathname } = useLocation();
 
   const [wideScreen, toggleWideScreen] = useGlobalStore((s) => [
@@ -35,9 +85,128 @@ export const useMenu = (): { menuItems: DropdownItem[] } => {
     s.updateTopicTitle,
   ]);
 
+  const { docId } = useParams<{ docId?: string }>();
+  const compareInstanceRef = useRef<ModalInstance | null>(null);
+
+  const saveSourceLabels = useMemo<Record<DocumentHistorySaveSource, string>>(
+    () => ({
+      autosave: t('pageEditor.history.saveSource.autosave', { ns: 'file' }),
+      llm_call: t('pageEditor.history.saveSource.llm_call', { ns: 'file' }),
+      manual: t('pageEditor.history.saveSource.manual', { ns: 'file' }),
+      restore: t('pageEditor.history.saveSource.restore', { ns: 'file' }),
+      system: t('pageEditor.history.saveSource.system', { ns: 'file' }),
+    }),
+    [t],
+  );
+
+  const handleRestoreHistory = useCallback(
+    async (item: DocumentHistoryListItem, onSuccess?: () => void): Promise<void> => {
+      if (!docId || item.isCurrent) return;
+
+      const { editor, markDirty, performSave } = useDocumentStore.getState();
+      if (!editor) {
+        message.error(t('pageEditor.history.restoreError', { ns: 'file' }));
+        return;
+      }
+
+      confirmModal({
+        cancelText: t('cancel', { ns: 'common' }),
+        content: t('pageEditor.history.restoreConfirm.content', {
+          ns: 'file',
+          savedAt: formatHistoryAbsoluteTime(item.savedAt),
+        }),
+        okText: t('pageEditor.history.restore', { ns: 'file' }),
+        onOk: async () => {
+          try {
+            const result = await documentService.getDocumentHistoryItem(
+              { documentId: docId, historyId: item.id },
+              `header-actions-history-${docId}`,
+            );
+
+            editor.setDocument('json', JSON.stringify(result.editorData));
+            markDirty(docId);
+            await performSave(docId, undefined, {
+              restoreFromHistoryId: item.id,
+              saveSource: 'restore',
+            });
+            onSuccess?.();
+          } catch (error) {
+            console.error('[HeaderActions] Failed to restore history item:', error);
+            message.error(t('pageEditor.history.restoreError', { ns: 'file' }));
+            throw error;
+          }
+        },
+        title: t('pageEditor.history.restoreConfirm.title', { ns: 'file' }),
+      });
+    },
+    [docId, message, t],
+  );
+
+  const openCompareModal = useCallback(async (): Promise<void> => {
+    if (!docId) return;
+
+    try {
+      const result = await documentService.listDocumentHistory({
+        documentId: docId,
+        includeCurrent: true,
+        limit: DOCUMENT_HISTORY_QUERY_LIST_LIMIT,
+      });
+      const items = result.items ?? [];
+
+      if (items.length === 0) {
+        message.info(t('pageEditor.history.empty', { ns: 'file' }));
+        return;
+      }
+
+      const initialHistoryId = items.find((item) => !item.isCurrent)?.id ?? items[0].id;
+
+      compareInstanceRef.current?.destroy();
+      const instance = openDocumentCompareModal({
+        documentId: docId,
+        initialHistoryId,
+        items,
+        onRestore: (item) => {
+          void handleRestoreHistory(item, () => instance.close());
+        },
+        saveSourceLabels,
+      });
+      compareInstanceRef.current = instance;
+    } catch (error) {
+      console.error('[HeaderActions] Failed to open document compare modal:', error);
+      message.error(t('pageEditor.history.compareError', { ns: 'file' }));
+    }
+  }, [docId, handleRestoreHistory, message, saveSourceLabels, t]);
+
+  const authorInfo = useAuthorInfo(activeTopic?.userId);
+
   const topicId = activeTopic?.id;
   const topicTitle = activeTopic?.title ?? '';
   const isFavorite = !!activeTopic?.favorite;
+  const menuHeader = useMemo<ReactNode | undefined>(() => {
+    if (!authorInfo?.fullName || !topicId) return undefined;
+
+    const updatedAt = activeTopic?.updatedAt;
+    const formattedDate = updatedAt
+      ? new Date(updatedAt).toLocaleString(undefined, {
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+        })
+      : '';
+    const updatedAtLabel = formattedDate
+      ? t('info.updatedAt', { ns: 'topic', time: formattedDate })
+      : undefined;
+
+    return (
+      <TopicInfoHeader
+        authorName={authorInfo.fullName}
+        title={t('info.title', { ns: 'topic' })}
+        updatedAtLabel={updatedAtLabel}
+      />
+    );
+  }, [activeTopic?.updatedAt, authorInfo?.fullName, topicId, t]);
 
   const menuItems = useMemo<DropdownItem[]>(() => {
     const items: DropdownItem[] = [];
@@ -116,6 +285,20 @@ export const useMenu = (): { menuItems: DropdownItem[] } => {
       );
     }
 
+    if (docId) {
+      items.push(
+        {
+          icon: <Icon icon={Clock3Icon} />,
+          key: 'open-document-compare',
+          label: t('pageEditor.history.compareTitle', { ns: 'file' }),
+          onClick: () => {
+            void openCompareModal();
+          },
+        },
+        { type: 'divider' as const },
+      );
+    }
+
     items.push({
       checked: wideScreen,
       icon: <Icon icon={Maximize2} />,
@@ -134,13 +317,15 @@ export const useMenu = (): { menuItems: DropdownItem[] } => {
           key: 'delete',
           label: t('delete', { ns: 'common' }),
           onClick: () => {
-            modal.confirm({
-              centered: true,
+            confirmModal({
+              cancelText: t('cancel', { ns: 'common' }),
+              content: t('actions.confirmRemoveTopic', { ns: 'topic' }),
               okButtonProps: { danger: true },
+              okText: t('delete', { ns: 'common' }),
               onOk: async () => {
                 await removeTopic(topicId);
               },
-              title: t('actions.confirmRemoveTopic', { ns: 'topic' }),
+              title: t('delete', { ns: 'common' }),
             });
           },
         },
@@ -156,16 +341,17 @@ export const useMenu = (): { menuItems: DropdownItem[] } => {
     pathname,
     workingDirectory,
     wideScreen,
+    docId,
     autoRenameTopicTitle,
     favoriteTopic,
     openTopicInNewWindow,
     removeTopic,
     updateTopicTitle,
     toggleWideScreen,
+    openCompareModal,
     t,
-    modal,
     message,
   ]);
 
-  return { menuItems };
+  return { menuHeader, menuItems };
 };

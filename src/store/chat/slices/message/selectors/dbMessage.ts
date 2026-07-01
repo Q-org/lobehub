@@ -172,8 +172,7 @@ export const selectActivatedToolIdsFromMessages = (
   for (const msg of messages) {
     if (
       msg.role === 'tool' &&
-      (msg.plugin?.identifier === LobeActivatorIdentifier ||
-        msg.plugin?.identifier === 'lobe-tools') &&
+      msg.plugin?.identifier === LobeActivatorIdentifier &&
       msg.pluginState?.activatedTools
     ) {
       const activatedTools = msg.pluginState.activatedTools as Array<{ identifier?: string }>;
@@ -208,14 +207,16 @@ export const selectActivatedSkillsFromMessages = (
 
   for (const msg of messages) {
     if (
-      msg.role === 'tool' &&
-      (msg.plugin?.identifier === SkillsIdentifier ||
-        msg.plugin?.identifier === LobeActivatorIdentifier ||
-        msg.plugin?.identifier === 'lobe-tools') &&
-      msg.plugin?.apiName === 'activateSkill' &&
-      msg.pluginState?.id &&
-      msg.pluginState?.name
-    ) {
+      msg.role !== 'tool' ||
+      !(
+        msg.plugin?.identifier === SkillsIdentifier ||
+        msg.plugin?.identifier === LobeActivatorIdentifier
+      )
+    )
+      continue;
+
+    // Direct activateSkill calls — state has top-level id/name
+    if (msg.plugin?.apiName === 'activateSkill' && msg.pluginState?.id && msg.pluginState?.name) {
       const id = msg.pluginState.id as string;
       skillsMap.set(id, {
         description: msg.pluginState.description as string | undefined,
@@ -223,19 +224,39 @@ export const selectActivatedSkillsFromMessages = (
         name: msg.pluginState.name as string,
       });
     }
+
+    // activateTools fallback — skills nested in pluginState.activatedSkills[]
+    if (
+      msg.plugin?.apiName === 'activateTools' &&
+      Array.isArray(msg.pluginState?.activatedSkills)
+    ) {
+      for (const skill of msg.pluginState.activatedSkills as Array<{
+        description?: string;
+        id?: string;
+        name?: string;
+      }>) {
+        if (skill.id && skill.name) {
+          skillsMap.set(skill.id, {
+            description: skill.description,
+            id: skill.id,
+            name: skill.name,
+          });
+        }
+      }
+    }
   }
 
   return skillsMap.size > 0 ? [...skillsMap.values()] : undefined;
 };
 
-// ============= GTD Todos Selectors ========== //
+// ============= Todos Selectors ========== //
 
 /**
  * Select the latest todos state from messages array
  *
  * Searches messages in reverse order to find the most recent tool message
  * that carries a `pluginState.todos` payload — regardless of which tool
- * produced it. `pluginState.todos` is treated as a shared contract: GTD
+ * produced it. `pluginState.todos` is treated as a shared contract: lobe-agent
  * writes it via its client state mutation, and heterogeneous agent adapters
  * (Claude Code TodoWrite, future ACP/Codex equivalents) synthesize it onto
  * the tool_result event. Any new producer that honors the shape gets picked

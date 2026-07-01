@@ -13,10 +13,14 @@ export const DEFAULT_PREFERENCE: UserPreference = {
     topic: true,
   },
   lab: {
-    enableHeterogeneousAgent: false,
+    enableAgentDocumentFloatingChatPanel: false,
+    enableAgentSelfIteration: false,
+    enableFleet: false,
     enableInputMarkdown: true,
+    enablePlatformAgent: false,
   },
   topicGroupMode: 'byTime',
+  topicIncludeCompleted: false,
   topicSortBy: 'updatedAt',
   useCmdEnterToSend: false,
 };

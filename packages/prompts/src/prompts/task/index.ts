@@ -1,4 +1,4 @@
-import type { TaskDetailData, TaskDetailWorkspaceNode } from '@lobechat/types';
+import type { TaskDetailData, TaskDetailWorkspaceNode, TaskStatus } from '@lobechat/types';
 
 // ── Formatting helpers for Task tool responses ──
 
@@ -55,6 +55,25 @@ export interface TaskSummary {
   status: string;
 }
 
+/**
+ * Deep-link to a task's detail page, so the agent can present task identifiers
+ * as clickable references — mirroring how Linear surfaces an issue's `url`.
+ *
+ * Pass `baseUrl` (e.g. `appEnv.APP_URL`) for an ABSOLUTE link. This is required
+ * whenever the message can leave the app — IM/bot channels (Slack, Telegram,
+ * WeChat…), push notifications, mobile — where there is no app origin to
+ * resolve a relative path against. Omit it only for in-app (SPA) rendering,
+ * where a relative path resolves against the current origin and is more durable.
+ */
+export const taskDetailHref = (identifier: string, baseUrl?: string): string => {
+  const path = `/task/${identifier}`;
+  return baseUrl ? `${baseUrl.replace(/\/$/, '')}${path}` : path;
+};
+
+/** Markdown-link form of a task identifier, e.g. `[T-198](https://app.lobehub.com/task/T-198)`. */
+export const taskRef = (identifier: string, baseUrl?: string): string =>
+  `[${identifier}](${taskDetailHref(identifier, baseUrl)})`;
+
 // Re-export shared types from @lobechat/types for backward compatibility
 export type {
   TaskDetailActivity,
@@ -73,35 +92,96 @@ export const formatTaskLine = (t: TaskSummary): string =>
  * Format createTask response
  */
 export const formatTaskCreated = (
-  t: TaskSummary & { instruction: string; parentLabel?: string },
+  t: TaskSummary & { baseUrl?: string; instruction: string; parentLabel?: string },
 ): string => {
   const lines = [
-    `Task created: ${t.identifier} "${t.name}"`,
+    `Task created: ${taskRef(t.identifier, t.baseUrl)} "${t.name}"`,
     `  Status: ${statusIcon(t.status)} ${t.status}`,
     `  Priority: ${priorityLabel(t.priority)}`,
   ];
-  if (t.parentLabel) lines.push(`  Parent: ${t.parentLabel}`);
+  if (t.parentLabel) lines.push(`  Parent: ${taskRef(t.parentLabel, t.baseUrl)}`);
   lines.push(`  Instruction: ${t.instruction}`);
   return lines.join('\n');
+};
+
+export interface TaskCreatedItem {
+  error?: string;
+  identifier?: string;
+  name: string;
+  success: boolean;
+}
+
+/**
+ * Format the createTasks (batch) response: a header plus one line per task,
+ * with successful identifiers rendered as links (absolute when `baseUrl` is
+ * given — required for IM / mobile, see {@link taskDetailHref}).
+ *
+ * Single source of truth shared by the client executor and the server runtime
+ * so the two stay identical.
+ */
+export const formatTasksCreated = (results: TaskCreatedItem[], baseUrl?: string): string => {
+  const lines = results.map((r, index) => {
+    if (r.success) {
+      const ref = r.identifier ? taskRef(r.identifier, baseUrl) : '(unknown id)';
+      return `${index + 1}. ${ref} "${r.name}" — created`;
+    }
+    return `${index + 1}. "${r.name}" — failed: ${r.error ?? 'Unknown error'}`;
+  });
+
+  const succeeded = results.filter((r) => r.success).length;
+  const failed = results.length - succeeded;
+  const header =
+    failed === 0
+      ? `Created ${succeeded} task${succeeded === 1 ? '' : 's'}:`
+      : `Created ${succeeded}/${results.length} tasks (${failed} failed):`;
+
+  return [header, ...lines].join('\n');
+};
+
+export interface TaskListFilters {
+  assigneeAgentId?: string;
+  isDefaultScope?: boolean;
+  isForAllAgents?: boolean;
+  isForCurrentAgent?: boolean;
+  parentIdentifier?: string;
+  priorities?: number[];
+  statuses?: TaskStatus[];
+}
+
+const buildTaskListLabel = (filters: TaskListFilters): string => {
+  if (filters.isDefaultScope) {
+    if (filters.isForAllAgents) return 'top-level unfinished tasks across all agents';
+    return filters.isForCurrentAgent
+      ? 'top-level unfinished tasks of the current agent'
+      : 'top-level unfinished tasks';
+  }
+
+  const parts: string[] = [];
+  if (filters.statuses?.length) parts.push(`status=[${filters.statuses.join(',')}]`);
+  if (filters.priorities?.length) {
+    parts.push(`priority=[${filters.priorities.map((p) => priorityLabel(p)).join(',')}]`);
+  }
+  if (filters.assigneeAgentId) parts.push(`agent=${filters.assigneeAgentId}`);
+
+  if (filters.parentIdentifier) {
+    return parts.length > 0
+      ? `subtasks of ${filters.parentIdentifier} matching ${parts.join(', ')}`
+      : `subtasks of ${filters.parentIdentifier}`;
+  }
+
+  return parts.length > 0 ? `tasks matching ${parts.join(', ')}` : 'tasks';
 };
 
 /**
  * Format task list response
  */
-export const formatTaskList = (
-  tasks: TaskSummary[],
-  parentLabel: string,
-  filter?: string,
-): string => {
+export const formatTaskList = (tasks: TaskSummary[], filters: TaskListFilters): string => {
+  const label = buildTaskListLabel(filters);
   if (tasks.length === 0) {
-    const filterNote = filter ? ` with status "${filter}"` : '';
-    return `No subtasks found under ${parentLabel}${filterNote}.`;
+    return `No ${label}.`;
   }
 
-  return [
-    `${tasks.length} task(s) under ${parentLabel}:`,
-    ...tasks.map((t) => `  ${formatTaskLine(t)}`),
-  ].join('\n');
+  return [`${tasks.length} ${label}:`, ...tasks.map((t) => `  ${formatTaskLine(t)}`)].join('\n');
 };
 
 /**
@@ -149,24 +229,6 @@ export const formatTaskDetail = (t: TaskDetailData): string => {
     lines.push(`Checkpoint: ${JSON.stringify(t.checkpoint)}`);
   } else {
     lines.push('Checkpoint: (not configured, default: onAgentRequest=true)');
-  }
-
-  // Review
-  lines.push('');
-  if (t.review && Object.keys(t.review).length > 0) {
-    const rubrics = (t.review as any).rubrics as
-      | Array<{ name: string; threshold?: number; type: string }>
-      | undefined;
-    lines.push(`Review (maxIterations: ${(t.review as any).maxIterations || 3}):`);
-    if (rubrics) {
-      for (const r of rubrics) {
-        lines.push(
-          `  - ${r.name} [${r.type}]${r.threshold ? ` ≥ ${Math.round(r.threshold * 100)}%` : ''}`,
-        );
-      }
-    }
-  } else {
-    lines.push('Review: (not configured)');
   }
 
   // Workspace
@@ -224,7 +286,7 @@ export const formatTaskDetail = (t: TaskDetailData): string => {
         const author = act.agentId ? '🤖 agent' : '👤 user';
         const content = act.content || '';
         const truncated = content.length > 80 ? content.slice(0, 80) + '...' : content;
-        lines.push(`  💭 ${act.time || ''} ${author} ${truncated}`);
+        lines.push(`  💭 ${act.time || ''} ${author} ${truncated}${idSuffix}`);
       }
     }
   }
@@ -237,6 +299,12 @@ export const formatTaskDetail = (t: TaskDetailData): string => {
  */
 export const formatTaskEdited = (identifier: string, changes: string[]): string =>
   `Task ${identifier} updated:\n  ${changes.join('\n  ')}`;
+
+/**
+ * Format deleteTask response
+ */
+export const formatTaskDeleted = (identifier: string, name?: string | null): string =>
+  name ? `Task ${identifier} "${name}" has been deleted.` : `Task ${identifier} has been deleted.`;
 
 /**
  * Format dependency change response
@@ -267,10 +335,21 @@ export const formatCheckpointCreated = (reason: string): string =>
 
 // ── Task Run Prompt Builder ──
 
+export interface TaskRunPromptAttachment {
+  fileType?: string;
+  id: string;
+  name: string;
+}
+
 export interface TaskRunPromptComment {
   agentId?: string | null;
   content: string;
   createdAt?: string;
+  /** Lightweight metadata of files attached to this comment. The actual file
+   * content (image bytes / parsed text) is passed to the agent runtime as
+   * multimodal `fileIds`; this list is just so the LLM knows what files exist
+   * and which comment they were attached to. */
+  files?: TaskRunPromptAttachment[];
   id?: string;
 }
 
@@ -340,6 +419,9 @@ export interface TaskRunPromptInput {
     assigneeAgentId?: string | null;
     dependencies?: Array<{ dependsOn: string; type: string }>;
     description?: string | null;
+    /** Lightweight metadata of files attached to the task instruction. Actual
+     * content is forwarded to the agent runtime via `fileIds` on execAgent. */
+    files?: TaskRunPromptAttachment[];
     id: string;
     identifier: string;
     instruction: string;
@@ -353,6 +435,17 @@ export interface TaskRunPromptInput {
     } | null;
     status: string;
     subtasks?: Array<TaskSummary & { blockedBy?: string }>;
+    /** Delivery-acceptance criteria the builder must self-evidence while working. */
+    verify?: {
+      criteria?: Array<{
+        required?: boolean;
+        requiredEvidence?: Array<{ hint?: string; type: string }>;
+        title: string;
+      }>;
+      enabled?: boolean;
+      maxIterations?: number;
+      requirement?: string;
+    } | null;
   };
   /** Pinned documents (workspace) */
   workspace?: TaskRunPromptWorkspaceNode[];
@@ -420,7 +513,11 @@ export const buildTaskRunPrompt = (input: TaskRunPromptInput, now?: Date): strin
       const ago = c.createdAt ? timeAgo(c.createdAt, now) : '';
       const timeAttr = ago ? ` time="${ago}"` : '';
       const idAttr = c.id ? ` id="${c.id}"` : '';
-      return `<comment${idAttr}${timeAttr}>${c.content}</comment>`;
+      const attachments =
+        c.files && c.files.length > 0
+          ? `\n<attachments>\n${c.files.map((f) => `  - ${f.name}${f.fileType ? ` (${f.fileType})` : ''}`).join('\n')}\n</attachments>`
+          : '';
+      return `<comment${idAttr}${timeAttr}>${c.content}${attachments}</comment>`;
     });
     sections.push(`<user_feedback>\n${lines.join('\n')}\n</user_feedback>`);
   }
@@ -434,6 +531,12 @@ export const buildTaskRunPrompt = (input: TaskRunPromptInput, now?: Date): strin
     `Instruction: ${task.instruction}`,
   ];
   if (task.description) taskLines.push(`Description: ${task.description}`);
+  if (task.files && task.files.length > 0) {
+    taskLines.push('Attachments (contents provided separately as multimodal inputs):');
+    for (const f of task.files) {
+      taskLines.push(`  - ${f.name}${f.fileType ? ` (${f.fileType})` : ''}`);
+    }
+  }
   if (task.assigneeAgentId) taskLines.push(`Agent: ${task.assigneeAgentId}`);
   if (task.parentIdentifier) taskLines.push(`Parent: ${task.parentIdentifier}`);
 
@@ -469,6 +572,33 @@ export const buildTaskRunPrompt = (input: TaskRunPromptInput, now?: Date): strin
     }
   } else {
     taskLines.push('Review: (not configured)');
+  }
+
+  // Verify — delivery acceptance (builder self-evidence)
+  if (task.verify?.enabled && (task.verify.criteria?.length || task.verify.requirement)) {
+    taskLines.push('');
+    taskLines.push(
+      `Verify — delivery acceptance (maxIterations: ${task.verify.maxIterations || 3}):`,
+    );
+    if (task.verify.requirement) {
+      taskLines.push(`  Requirement: ${task.verify.requirement}`);
+    }
+    if (task.verify.criteria && task.verify.criteria.length > 0) {
+      taskLines.push('  Criteria — capture the listed evidence while you work:');
+      for (const c of task.verify.criteria) {
+        const flag = c.required === false ? '' : ' (required)';
+        taskLines.push(`    - ${c.title}${flag}`);
+        for (const e of c.requiredEvidence ?? []) {
+          taskLines.push(`        · evidence: ${e.type}${e.hint ? ` — ${e.hint}` : ''}`);
+        }
+      }
+    }
+    taskLines.push(
+      '  Use the `verify` skill to capture each artifact, then submit it with `lh verify',
+    );
+    taskLines.push(
+      '  submit` (the skill resolves your verify run id and check item ids at runtime).',
+    );
   }
 
   // Workspace
@@ -578,4 +708,11 @@ export const buildTaskRunPrompt = (input: TaskRunPromptInput, now?: Date): strin
   return sections.join('\n\n');
 };
 
-export { priorityLabel, statusIcon };
+export { briefIcon, priorityLabel, statusIcon, timeAgo };
+
+export type { BuildTaskDetailPromptInput } from './buildTaskDetailPrompt';
+export { buildTaskDetailPrompt } from './buildTaskDetailPrompt';
+export type { BuildTaskListPromptInput } from './buildTaskListPrompt';
+export { buildTaskListPrompt } from './buildTaskListPrompt';
+export type { TaskManagerPromptDefaults } from './taskManagerDefaults';
+export { buildTaskManagerDefaultsPrompt } from './taskManagerDefaults';

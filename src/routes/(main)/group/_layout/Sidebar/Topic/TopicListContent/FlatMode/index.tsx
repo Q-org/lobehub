@@ -26,7 +26,7 @@ const FlatMode = memo(() => {
     useChatStore((s) => [
       s.activeTopicId,
       s.activeThreadId,
-      topicSelectors.hasMoreTopics(s),
+      topicSelectors.hasMoreTopicsForSidebar(s),
       topicSelectors.isExpandingPageSize(s),
       s.openAllTopicsDrawer,
     ]);
@@ -44,6 +44,7 @@ const FlatMode = memo(() => {
           fav={topic.favorite}
           id={topic.id}
           key={topic.id}
+          status={topic.status}
           threadId={activeThreadId}
           title={topic.title}
         />

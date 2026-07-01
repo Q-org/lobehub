@@ -1,1 +1,2 @@
-export { ClaudeCodeAdapter, claudeCodePreset } from './claudeCode';
+export { ClaudeCodeAdapter } from './claudeCode';
+export { CodexAdapter } from './codex';

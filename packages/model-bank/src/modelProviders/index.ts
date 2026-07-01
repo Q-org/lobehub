@@ -7,6 +7,7 @@ import Ai302Provider from './ai302';
 import Ai360Provider from './ai360';
 import AiHubMixProvider from './aihubmix';
 import AkashChatProvider from './akashchat';
+import AntGroupProvider from './antgroup';
 import AnthropicProvider from './anthropic';
 import AzureProvider from './azure';
 import AzureAIProvider from './azureai';
@@ -50,6 +51,8 @@ import NvidiaProvider from './nvidia';
 import OllamaProvider from './ollama';
 import OllamaCloudProvider from './ollamacloud';
 import OpenAIProvider from './openai';
+import OpenCodeCodingPlanProvider from './opencodeCodingPlan';
+import OpenCodeZenProvider from './opencodeZen';
 import OpenRouterProvider from './openrouter';
 import PerplexityProvider from './perplexity';
 import PPIOProvider from './ppio';
@@ -214,10 +217,13 @@ export const DEFAULT_MODEL_PROVIDER_LIST = [
   VercelAIGatewayProvider,
   CerebrasProvider,
   ZenMuxProvider,
+  OpenCodeZenProvider,
+  OpenCodeCodingPlanProvider,
   StraicoProvider,
   XiaomiMiMoProvider,
   LongCatProvider,
   StreamLakeProvider,
+  AntGroupProvider,
 ];
 
 export const filterEnabledModels = (provider: ModelProviderCard) => {
@@ -236,6 +242,7 @@ export { default as Ai302ProviderCard } from './ai302';
 export { default as Ai360ProviderCard } from './ai360';
 export { default as AiHubMixProviderCard } from './aihubmix';
 export { default as AkashChatProviderCard } from './akashchat';
+export { default as AntGroupProviderCard } from './antgroup';
 export { default as AnthropicProviderCard } from './anthropic';
 export { default as AzureProviderCard } from './azure';
 export { default as AzureAIProviderCard } from './azureai';
@@ -279,6 +286,8 @@ export { default as NvidiaProviderCard } from './nvidia';
 export { default as OllamaProviderCard } from './ollama';
 export { default as OllamaCloudProviderCard } from './ollamacloud';
 export { default as OpenAIProviderCard } from './openai';
+export { default as OpenCodeCodingPlanProviderCard } from './opencodeCodingPlan';
+export { default as OpenCodeZenProviderCard } from './opencodeZen';
 export { default as OpenRouterProviderCard } from './openrouter';
 export { default as PerplexityProviderCard } from './perplexity';
 export { default as PPIOProviderCard } from './ppio';

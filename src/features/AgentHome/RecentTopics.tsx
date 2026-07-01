@@ -1,13 +1,16 @@
 'use client';
 
+import { AGENT_CHAT_TOPIC_URL } from '@lobechat/const';
 import { Block, Flexbox, Text } from '@lobehub/ui';
 import { cssVar } from 'antd-style';
 import { BotMessageSquareIcon } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router';
 import useSWR from 'swr';
 
+import WorkspaceLink from '@/features/Workspace/WorkspaceLink';
+import { agentHomeKeys } from '@/libs/swr/keys';
 import { topicService } from '@/services/topic';
 
 import SectionHeader from './SectionHeader';
@@ -16,9 +19,8 @@ const AgentRecentTopics = memo(() => {
   const { t } = useTranslation('chat');
   const { aid } = useParams<{ aid: string }>();
 
-  const { data: result, isLoading } = useSWR(
-    aid ? ['agentHome.topics', aid] : null,
-    () => topicService.getTopics({ agentId: aid!, current: 0, pageSize: 10 }),
+  const { data: result, isLoading } = useSWR(aid ? agentHomeKeys.topics(aid) : null, () =>
+    topicService.getTopics({ agentId: aid!, current: 0, pageSize: 10 }),
   );
 
   const topics = result?.items;
@@ -28,17 +30,17 @@ const AgentRecentTopics = memo(() => {
   return (
     <Flexbox gap={16}>
       <SectionHeader
+        actionLabel={t('topic.viewAll')}
+        actionUrl={`/agent/${aid}`}
         icon={BotMessageSquareIcon}
         title={t('topic.recent')}
-        actionUrl={`/agent/${aid}`}
-        actionLabel={t('topic.viewAll')}
       />
       <Flexbox horizontal gap={12} style={{ overflowX: 'auto', paddingBottom: 4 }}>
         {topics.map((topic) => (
-          <Link
+          <WorkspaceLink
             key={topic.id}
-            to={`/agent/${aid}?topic=${topic.id}`}
             style={{ color: 'inherit', flexShrink: 0, textDecoration: 'none' }}
+            to={AGENT_CHAT_TOPIC_URL(aid!, topic.id)}
           >
             <Block
               clickable
@@ -56,13 +58,11 @@ const AgentRecentTopics = memo(() => {
                   {topic.title || t('topic.defaultTitle')}
                 </Text>
                 <Text ellipsis fontSize={12} type={'secondary'}>
-                  {topic.updatedAt
-                    ? new Date(topic.updatedAt).toLocaleDateString()
-                    : ''}
+                  {topic.updatedAt ? new Date(topic.updatedAt).toLocaleDateString() : ''}
                 </Text>
               </Flexbox>
             </Block>
-          </Link>
+          </WorkspaceLink>
         ))}
       </Flexbox>
     </Flexbox>

@@ -1,9 +1,13 @@
+import { INTEREST_AREA_KEYS } from '@lobechat/const';
 import type { BuiltinToolManifest, HumanInterventionRule } from '@lobechat/types';
 
+import { MARKETPLACE_CATEGORY_VALUES } from './agentMarketplace/types';
 import { toolSystemPrompt } from './toolSystemRole';
 import { WebOnboardingApiName, WebOnboardingIdentifier } from './types';
 
-const agentIdentityConfirmationRules: HumanInterventionRule[] = [
+// Agent identity (name/emoji) surface a confirmation card;
+// user profile fields (fullName) and interest saves bypass intervention.
+const saveUserQuestionConfirmationRules: HumanInterventionRule[] = [
   {
     match: {
       agentName: { pattern: '\\S', type: 'regex' },
@@ -23,18 +27,8 @@ export const WebOnboardingManifest: BuiltinToolManifest = {
   api: [
     {
       description:
-        'Read a lightweight onboarding summary. Note: phase and missing-fields are automatically injected into your system context each turn, so this tool is only needed as a fallback when you are uncertain about the current state.',
-      name: WebOnboardingApiName.getOnboardingState,
-      parameters: {
-        properties: {},
-        type: 'object',
-      },
-      renderDisplayControl: 'collapsed',
-    },
-    {
-      description:
-        'Persist structured onboarding fields. Use for agentName and agentEmoji (updates inbox agent title/avatar and requires user confirmation), fullName, interests, and responseLanguage.',
-      humanIntervention: agentIdentityConfirmationRules,
+        'Persist structured onboarding fields. agentName and agentEmoji (updates inbox agent title/avatar) require user confirmation; interests/customInterests saves run without confirmation.',
+      humanIntervention: saveUserQuestionConfirmationRules,
       name: WebOnboardingApiName.saveUserQuestion,
       parameters: {
         additionalProperties: false,
@@ -50,14 +44,21 @@ export const WebOnboardingManifest: BuiltinToolManifest = {
           fullName: {
             type: 'string',
           },
-          interests: {
+          customInterests: {
+            description:
+              'Specific freeform user interests that do not fit the predefined interest keys.',
             items: {
               type: 'string',
             },
             type: 'array',
           },
-          responseLanguage: {
-            type: 'string',
+          interests: {
+            description: 'Predefined interest keys selected from the supported enum values.',
+            items: {
+              enum: [...INTEREST_AREA_KEYS],
+              type: 'string',
+            },
+            type: 'array',
           },
         },
         type: 'object',
@@ -110,31 +111,104 @@ export const WebOnboardingManifest: BuiltinToolManifest = {
     },
     {
       description:
-        "Update an existing document by applying byte-exact SEARCH/REPLACE hunks. This is the preferred way to persist new information incrementally — it is cheaper, safer, and less error-prone than rewriting the full document with writeDocument. Each hunk's search must match the current document exactly (whitespace, punctuation, casing). If the search appears multiple times, add surrounding context to make it unique or set replaceAll=true. On failure (HUNK_NOT_FOUND / HUNK_AMBIGUOUS), adjust the search string and retry; do not fall back to writeDocument unless most of the document must change.",
+        'Update an existing document by applying structured hunks **in a single call**. Preferred over writeDocument for every incremental edit — cheaper, safer, less error-prone.\n\n' +
+        '**BATCH RULE (mandatory):** put EVERY change you want to make this turn into the `hunks` array of ONE call. Do NOT call updateDocument multiple times in a row for the same document — sequential calls waste a full LLM round-trip each and are forbidden. If you have 4 things to record, send 1 call with 4 hunks, not 4 calls with 1 hunk.\n\n' +
+        'Each hunk picks ONE mode:\n' +
+        '- `replace` (default): byte-exact SEARCH → REPLACE. For small textual tweaks.\n' +
+        '- `delete`: remove the byte-exact SEARCH region.\n' +
+        '- `deleteLines`: drop lines [startLine, endLine] (1-based, inclusive). Use the line numbers shown in <current_*_document>.\n' +
+        '- `insertAt`: insert `content` before `line`. Use `line = totalLines + 1` to append to the end; `line = 1` to prepend.\n' +
+        '- `replaceLines`: replace lines [startLine, endLine] with `content`.\n' +
+        'Line-based hunks REQUIRE the line numbers from the injected <current_soul_document> / <current_user_persona> view. On failure (HUNK_NOT_FOUND / HUNK_AMBIGUOUS / LINE_OUT_OF_RANGE / LINE_OVERLAP), re-check the injected document and retry with corrected hunks; do NOT fall back to writeDocument unless most of the document must change.',
       name: WebOnboardingApiName.updateDocument,
       parameters: {
         properties: {
           hunks: {
-            description: 'Ordered list of SEARCH/REPLACE hunks applied sequentially.',
+            description:
+              'Ordered list of hunks — pack ALL changes for this turn into this single array. Content-based hunks (replace/delete) run first in order; line-based hunks (deleteLines/insertAt/replaceLines) run afterward, highest line first. Calling updateDocument again in the next turn for changes you could have included here is forbidden.',
             items: {
-              additionalProperties: false,
-              properties: {
-                replace: {
-                  description: 'Replacement text; may be empty to delete the matched region.',
-                  type: 'string',
+              oneOf: [
+                {
+                  additionalProperties: false,
+                  properties: {
+                    mode: { const: 'replace', type: 'string' },
+                    replace: {
+                      description: 'Replacement text; may be empty to delete the matched region.',
+                      type: 'string',
+                    },
+                    replaceAll: {
+                      description: 'Replace every occurrence of search. Defaults to false.',
+                      type: 'boolean',
+                    },
+                    search: {
+                      description: 'Byte-exact substring to locate in the current document.',
+                      type: 'string',
+                    },
+                  },
+                  required: ['search', 'replace'],
+                  type: 'object',
                 },
-                replaceAll: {
-                  description:
-                    'Replace every occurrence of search. Defaults to false; leave unset unless you explicitly want a global replace.',
-                  type: 'boolean',
+                {
+                  additionalProperties: false,
+                  properties: {
+                    mode: { const: 'delete', type: 'string' },
+                    replaceAll: { type: 'boolean' },
+                    search: {
+                      description: 'Byte-exact substring to remove.',
+                      type: 'string',
+                    },
+                  },
+                  required: ['mode', 'search'],
+                  type: 'object',
                 },
-                search: {
-                  description: 'Byte-exact substring to locate in the current document.',
-                  type: 'string',
+                {
+                  additionalProperties: false,
+                  properties: {
+                    endLine: {
+                      description: 'Inclusive 1-based end line.',
+                      type: 'integer',
+                    },
+                    mode: { const: 'deleteLines', type: 'string' },
+                    startLine: {
+                      description: 'Inclusive 1-based start line.',
+                      type: 'integer',
+                    },
+                  },
+                  required: ['mode', 'startLine', 'endLine'],
+                  type: 'object',
                 },
-              },
-              required: ['search', 'replace'],
-              type: 'object',
+                {
+                  additionalProperties: false,
+                  properties: {
+                    content: {
+                      description: 'Text to insert; may span multiple lines (use \\n).',
+                      type: 'string',
+                    },
+                    line: {
+                      description:
+                        '1-based line to insert before. Use `totalLines + 1` to append to the end.',
+                      type: 'integer',
+                    },
+                    mode: { const: 'insertAt', type: 'string' },
+                  },
+                  required: ['mode', 'line', 'content'],
+                  type: 'object',
+                },
+                {
+                  additionalProperties: false,
+                  properties: {
+                    content: {
+                      description: 'Replacement text; may be empty to delete the range.',
+                      type: 'string',
+                    },
+                    endLine: { type: 'integer' },
+                    mode: { const: 'replaceLines', type: 'string' },
+                    startLine: { type: 'integer' },
+                  },
+                  required: ['mode', 'startLine', 'endLine', 'content'],
+                  type: 'object',
+                },
+              ],
             },
             minItems: 1,
             type: 'array',
@@ -146,6 +220,60 @@ export const WebOnboardingManifest: BuiltinToolManifest = {
           },
         },
         required: ['type', 'hunks'],
+        type: 'object',
+      },
+    },
+    {
+      description:
+        'Open an Agent Marketplace picker card in the UI, prioritizing tabs by the provided category hints. Returns the request in pending state.',
+      humanIntervention: 'always',
+      name: WebOnboardingApiName.showAgentMarketplace,
+      parameters: {
+        properties: {
+          categoryHints: {
+            description:
+              'One or more fixed MarketplaceCategory slugs used to move matching picker tabs to the front.',
+            items: {
+              enum: [...MARKETPLACE_CATEGORY_VALUES],
+              type: 'string',
+            },
+            minItems: 1,
+            type: 'array',
+          },
+          description: {
+            description: 'Optional secondary line shown below the prompt.',
+            type: 'string',
+          },
+          prompt: {
+            description:
+              'Short, natural sentence shown to the user explaining what the marketplace is for.',
+            type: 'string',
+          },
+          requestId: {
+            description: 'Unique identifier for this pick request.',
+            type: 'string',
+          },
+        },
+        required: ['categoryHints', 'prompt', 'requestId'],
+        type: 'object',
+      },
+      renderDisplayControl: 'collapsed',
+    },
+    {
+      description:
+        "Record the user's template selection for a pending pick request. Normally client-handled after the user submits in the UI.",
+      name: WebOnboardingApiName.submitAgentPick,
+      parameters: {
+        properties: {
+          requestId: { description: 'The pick request ID to submit.', type: 'string' },
+          selectedTemplateIds: {
+            description: 'Template IDs the user selected from the marketplace.',
+            items: { type: 'string' },
+            minItems: 1,
+            type: 'array',
+          },
+        },
+        required: ['requestId', 'selectedTemplateIds'],
         type: 'object',
       },
     },

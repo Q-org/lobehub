@@ -54,9 +54,10 @@ describe('useMenu', () => {
 
     act(() => {
       const { mainItems, logoutItems } = result.current;
-      // 'setting' and 'memory' are shown when logged in
+      // 'setting' is shown when logged in
       expect(mainItems?.some((item) => item?.key === 'setting')).toBe(true);
-      expect(mainItems?.some((item) => item?.key === 'memory')).toBe(true);
+      // 'memory' is gated behind the showMemory nav-layout flag (defaults off)
+      expect(mainItems?.some((item) => item?.key === 'memory')).toBe(false);
       // 'logout' is shown when isLoginWithAuth is true
       expect(logoutItems.some((item) => item?.key === 'logout')).toBe(true);
     });
@@ -75,6 +76,27 @@ describe('useMenu', () => {
       expect(mainItems?.some((item) => item?.key === 'setting')).toBe(false);
       expect(mainItems?.some((item) => item?.key === 'memory')).toBe(false);
       expect(logoutItems.some((item) => item?.key === 'logout')).toBe(false);
+    });
+  });
+
+  it('should not have consecutive dividers in mainItems', () => {
+    act(() => {
+      useUserStore.setState({ isSignedIn: true });
+    });
+
+    const { result } = renderHook(() => useMenu(), { wrapper });
+
+    act(() => {
+      const { mainItems } = result.current;
+      if (!mainItems) return;
+
+      for (let i = 1; i < mainItems.length; i++) {
+        const prev = mainItems[i - 1];
+        const curr = mainItems[i];
+        const isDivider = (item: any) =>
+          item && typeof item === 'object' && item.type === 'divider';
+        expect(isDivider(prev) && isDivider(curr)).toBe(false);
+      }
     });
   });
 });

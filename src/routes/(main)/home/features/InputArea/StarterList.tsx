@@ -1,22 +1,26 @@
-import { BUILTIN_AGENT_SLUGS } from '@lobechat/builtin-agents';
-import { type ButtonProps } from '@lobehub/ui';
-import { Button, Center, Tooltip } from '@lobehub/ui';
-import { GroupBotSquareIcon } from '@lobehub/ui/icons';
-import { createStaticStyles, cssVar, cx } from 'antd-style';
-import { BotIcon, ImageIcon, PenLineIcon, VideoIcon } from 'lucide-react';
-import { memo, useCallback, useMemo } from 'react';
+import { ModelIcon } from '@lobehub/icons';
+import { Button, Center, Skeleton, Tag, Tooltip } from '@lobehub/ui';
+import { App } from 'antd';
+import { createStaticStyles, cx } from 'antd-style';
+import { memo, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useInitBuiltinAgent } from '@/hooks/useInitBuiltinAgent';
+import {
+  type BusinessModelModeConfig,
+  useBusinessModelModeConfig,
+} from '@/business/client/hooks/useBusinessAgentMode';
+import type { HomeNewModelItem } from '@/business/client/hooks/useHomeNewModels';
+import { useHomeNewModels } from '@/business/client/hooks/useHomeNewModels';
+import { usePermission } from '@/hooks/usePermission';
 import { useStableNavigate } from '@/hooks/useStableNavigate';
-import { type StarterMode } from '@/store/home';
-import { useHomeStore } from '@/store/home';
+import { agentService } from '@/services/agent';
+import { useAgentStore } from '@/store/agent';
+import { agentByIdSelectors } from '@/store/agent/selectors';
+
+import { useResolvedHomeAgentId } from '../AgentSelect/useResolvedHomeAgentId';
+import { useStarterModelDefaults } from './useStarterModelDefaults';
 
 const styles = createStaticStyles(({ css, cssVar }) => ({
-  active: css`
-    border-color: ${cssVar.colorFillSecondary} !important;
-    background: ${cssVar.colorBgElevated} !important;
-  `,
   button: css`
     height: 40px;
     border-color: ${cssVar.colorFillSecondary};
@@ -28,129 +32,148 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
       background: ${cssVar.colorBgElevated} !important;
     }
   `,
+  container: css`
+    flex-wrap: wrap;
+  `,
+  newTag: css`
+    padding-inline: 10px !important;
+    border-radius: 999px !important;
+  `,
 }));
 
-type StarterTitleKey =
-  | 'starter.createAgent'
-  | 'starter.createGroup'
-  | 'starter.write'
-  | 'starter.imageGeneration'
-  | 'starter.videoGeneration'
-  | 'starter.deepResearch';
-
-interface StarterItem {
-  disabled?: boolean;
-  hot?: boolean;
-  icon?: ButtonProps['icon'];
-  key: StarterMode;
-  titleKey: StarterTitleKey;
-}
+const getStarterItemKey = (item: HomeNewModelItem) => `${item.type}:${item.model}`;
+const getStarterItemProvider = (item: HomeNewModelItem, fallbackProvider: string) =>
+  item.provider ?? fallbackProvider;
+const skeletonWidths = [112, 150, 126, 138];
 
 const StarterList = memo(() => {
   const { t } = useTranslation('home');
-
-  useInitBuiltinAgent(BUILTIN_AGENT_SLUGS.agentBuilder);
-  useInitBuiltinAgent(BUILTIN_AGENT_SLUGS.groupAgentBuilder);
-  useInitBuiltinAgent(BUILTIN_AGENT_SLUGS.pageAgent);
-
   const navigate = useStableNavigate();
-  const [inputActiveMode, setInputActiveMode] = useHomeStore((s) => [
-    s.inputActiveMode,
-    s.setInputActiveMode,
-  ]);
-
-  const items: StarterItem[] = useMemo(
-    () => [
-      {
-        icon: BotIcon,
-        key: 'agent',
-        titleKey: 'starter.createAgent',
-      },
-      {
-        icon: GroupBotSquareIcon,
-        key: 'group',
-        titleKey: 'starter.createGroup',
-      },
-      {
-        icon: PenLineIcon,
-        key: 'write',
-        titleKey: 'starter.write',
-      },
-      {
-        icon: ImageIcon,
-        key: 'image',
-        titleKey: 'starter.imageGeneration',
-      },
-      {
-        hot: true,
-        icon: VideoIcon,
-        key: 'video',
-        titleKey: 'starter.videoGeneration',
-      },
-      // {
-      //   disabled: true,
-      //   icon: MicroscopeIcon,
-      //   key: 'research',
-      //   titleKey: 'starter.deepResearch',
-      // },
-    ],
-    [],
-  );
+  const { message } = App.useApp();
+  const { agentId: activeAgentId } = useResolvedHomeAgentId();
+  const { allowed: canCreateContent, reason } = usePermission('create_content');
+  const updateAgentConfigById = useAgentStore((s) => s.updateAgentConfigById);
+  const [switchingKey, setSwitchingKey] = useState<string | null>(null);
+  const { defaultHomeNewModels, fallbackChatProvider } = useStarterModelDefaults();
+  const { isLoading, items } = useHomeNewModels(defaultHomeNewModels);
+  const applyBusinessModelModeConfig = useBusinessModelModeConfig();
 
   const handleClick = useCallback(
-    (key: StarterMode) => {
-      if (key === 'video') {
-        navigate('/video?model=doubao-seedance-2-0-260128');
+    async (item: HomeNewModelItem) => {
+      if (!canCreateContent) return;
+
+      const key = getStarterItemKey(item);
+
+      if (item.type === 'video') {
+        navigate(`/video?model=${item.model}`);
         return;
       }
 
-      if (key === 'image') {
-        navigate('/image');
+      if (item.type === 'image') {
+        navigate(`/image?model=${item.model}`);
         return;
       }
 
-      // Toggle mode: if clicking the active mode, clear it; otherwise set it
-      if (inputActiveMode === key) {
-        setInputActiveMode(null);
-      } else {
-        setInputActiveMode(key);
+      if (item.type === 'chat') {
+        if (!activeAgentId || switchingKey) return;
+        setSwitchingKey(key);
+        const provider = getStarterItemProvider(item, fallbackChatProvider);
+        try {
+          // Hydrate the agent's config before mutating so the optimistic update
+          // doesn't drop pre-existing fields the home input never loaded.
+          let agentState = useAgentStore.getState();
+          if (!agentState.agentMap[activeAgentId]) {
+            const config = await agentService.getAgentConfigById(activeAgentId);
+            if (config) agentState.internal_dispatchAgentMap(activeAgentId, config);
+            agentState = useAgentStore.getState();
+          }
+
+          const currentModel = agentByIdSelectors.getAgentModelById(activeAgentId)(agentState);
+          const currentProvider =
+            agentByIdSelectors.getAgentModelProviderById(activeAgentId)(agentState);
+          const nextConfig: BusinessModelModeConfig = applyBusinessModelModeConfig({
+            model: item.model,
+            provider,
+          });
+          const shouldUpdateAgentMode =
+            nextConfig.chatConfig?.enableAgentMode === false &&
+            agentByIdSelectors.getAgentEnableModeById(activeAgentId)(agentState);
+
+          if (
+            currentModel === item.model &&
+            currentProvider === provider &&
+            !shouldUpdateAgentMode
+          ) {
+            message.info(t('starter.modelInUse', { name: item.title }));
+            return;
+          }
+
+          await updateAgentConfigById(activeAgentId, nextConfig);
+          message.success(t('starter.modelSwitched', { name: item.title }));
+        } finally {
+          setSwitchingKey(null);
+        }
+        return;
       }
     },
-    [inputActiveMode, navigate, setInputActiveMode],
+    [
+      canCreateContent,
+      navigate,
+      activeAgentId,
+      applyBusinessModelModeConfig,
+      updateAgentConfigById,
+      switchingKey,
+      fallbackChatProvider,
+      message,
+      t,
+    ],
   );
 
   return (
-    <Center horizontal gap={8}>
-      {items.map((item) => {
-        const button = (
-          <Button
-            className={cx(styles.button, inputActiveMode === item.key && styles.active)}
-            disabled={item.disabled}
-            icon={item.icon}
-            key={item.key}
-            shape={'round'}
-            variant={'outlined'}
-            iconProps={{
-              color: inputActiveMode === item.key ? cssVar.colorText : cssVar.colorTextSecondary,
-              size: 18,
-            }}
-            onClick={() => handleClick(item.key)}
-          >
-            {t(item.titleKey)}
-            {item.hot && ' 🔥'}
-          </Button>
-        );
+    <Center horizontal className={styles.container} gap={8}>
+      <Tag className={styles.newTag} size={'small'}>
+        {t('starter.newLabel')}
+      </Tag>
+      {isLoading
+        ? defaultHomeNewModels.map((item, index) => (
+            <Skeleton.Button
+              active
+              key={getStarterItemKey(item)}
+              style={{
+                borderRadius: 999,
+                height: 40,
+                width: skeletonWidths[index] ?? 126,
+              }}
+            />
+          ))
+        : items.map((item) => {
+            const key = getStarterItemKey(item);
+            const isSwitching = switchingKey === key;
+            const button = (
+              <Button
+                className={cx(styles.button)}
+                disabled={!canCreateContent || (!!switchingKey && !isSwitching)}
+                icon={<ModelIcon model={item.iconModel ?? item.model} size={18} />}
+                key={key}
+                loading={isSwitching}
+                shape={'round'}
+                variant={'outlined'}
+                onClick={() => handleClick(item)}
+              >
+                {item.title}
+              </Button>
+            );
 
-        if (item.disabled) {
-          return (
-            <Tooltip key={item.key} title={t('starter.developing')}>
-              {button}
-            </Tooltip>
-          );
-        }
+            if (!canCreateContent) {
+              return (
+                <Tooltip key={key} title={reason}>
+                  <div>{button}</div>
+                </Tooltip>
+              );
+            }
 
-        return button;
-      })}
+            return button;
+          })}
     </Center>
   );
 });

@@ -1,6 +1,6 @@
 export enum RecommendedSkillType {
   Builtin = 'builtin',
-  Klavis = 'klavis',
+  Composio = 'composio',
   Lobehub = 'lobehub',
 }
 
@@ -14,13 +14,16 @@ export const RECOMMENDED_SKILLS: RecommendedSkillItem[] = [
   { id: 'lobe-artifacts', type: RecommendedSkillType.Builtin },
   { id: 'lobe-user-memory', type: RecommendedSkillType.Builtin },
   { id: 'lobe-cloud-sandbox', type: RecommendedSkillType.Builtin },
-  { id: 'lobe-gtd', type: RecommendedSkillType.Builtin },
+  { id: 'lobe-task', type: RecommendedSkillType.Builtin },
   { id: 'lobe-agent-documents', type: RecommendedSkillType.Builtin },
   { id: 'lobe-message', type: RecommendedSkillType.Builtin },
-  // Klavis skills
-  { id: 'gmail', type: RecommendedSkillType.Klavis },
-  { id: 'notion', type: RecommendedSkillType.Klavis },
-  { id: 'google-drive', type: RecommendedSkillType.Klavis },
-  { id: 'google-calendar', type: RecommendedSkillType.Klavis },
-  { id: 'slack', type: RecommendedSkillType.Klavis },
+  // LobeHub skills
+  { id: 'notion', type: RecommendedSkillType.Lobehub },
+  { id: 'posthog', type: RecommendedSkillType.Lobehub },
+  { id: 'twitter', type: RecommendedSkillType.Lobehub },
+  // Composio skills
+  { id: 'gmail', type: RecommendedSkillType.Composio },
+  { id: 'google-drive', type: RecommendedSkillType.Composio },
+  { id: 'google-calendar', type: RecommendedSkillType.Composio },
+  { id: 'slack', type: RecommendedSkillType.Composio },
 ];

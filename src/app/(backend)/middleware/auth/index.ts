@@ -1,14 +1,15 @@
-import { type ChatCompletionErrorPayload } from '@lobechat/model-runtime';
+import type { ChatCompletionErrorPayload } from '@lobechat/model-runtime';
 import { AgentRuntimeError } from '@lobechat/model-runtime';
 import { context as otContext } from '@lobechat/observability-otel/api';
-import { type ClientSecretPayload } from '@lobechat/types';
+import type { ClientSecretPayload } from '@lobechat/types';
 import { ChatErrorType } from '@lobechat/types';
 
 import { auth } from '@/auth';
 import { getServerDB } from '@/database/core/db-adaptor';
-import { type LobeChatDatabase } from '@/database/type';
+import type { LobeChatDatabase } from '@/database/type';
 import { LOBE_CHAT_OIDC_AUTH_HEADER } from '@/envs/auth';
 import { extractTraceContext, injectActiveTraceHeaders } from '@/libs/observability/traceparent';
+import { assertOIDCUserActive } from '@/libs/oidc-provider/access-control';
 import { validateOIDCJWT } from '@/libs/oidc-provider/jwt';
 import { createErrorResponse } from '@/utils/errorResponse';
 
@@ -22,6 +23,40 @@ export type RequestHandler = (
     userId: string;
   },
 ) => Promise<Response>;
+
+interface OIDCClientDebugInfo {
+  clientId?: string;
+  payload?: Record<string, unknown>;
+}
+
+const isUnauthorizedAuthError = (error: unknown) => {
+  return !!error && typeof error === 'object' && 'code' in error && error.code === 'UNAUTHORIZED';
+};
+
+/**
+ * Decode JWT payload for debugging only.
+ * The decoded payload must never be trusted for authorization decisions.
+ */
+const getOIDCClientDebugInfo = (token?: string | null): OIDCClientDebugInfo => {
+  if (!token) return {};
+
+  const [, payload] = token.split('.');
+  if (!payload) return {};
+
+  try {
+    const normalizedPayload = payload.replaceAll('-', '+').replaceAll('_', '/');
+    const decodedPayload = JSON.parse(Buffer.from(normalizedPayload, 'base64').toString('utf8')) as
+      | Record<string, unknown>
+      | undefined;
+
+    const clientId =
+      typeof decodedPayload?.client_id === 'string' ? decodedPayload.client_id : undefined;
+
+    return { clientId, payload: decodedPayload };
+  } catch {
+    return {};
+  }
+};
 
 export const checkAuth =
   (handler: RequestHandler) => async (req: Request, options: RequestOptions) => {
@@ -54,6 +89,7 @@ export const checkAuth =
       if (oidcAuthorization) {
         const oidc = await validateOIDCJWT(oidcAuthorization);
         userId = oidc.userId;
+        await assertOIDCUserActive(serverDB, userId);
       } else {
         // Better Auth session authentication (web)
         const session = await auth.api.getSession({
@@ -68,11 +104,31 @@ export const checkAuth =
       }
     } catch (e) {
       const params = await options.params;
+      const oidcAuthorization = req.headers.get(LOBE_CHAT_OIDC_AUTH_HEADER);
+
+      // Only log OIDC auth failures — better-auth session failures are a common
+      // baseline (unauthenticated browser hits) and would otherwise flood logs.
+      if (oidcAuthorization) {
+        const oidcDebugInfo = getOIDCClientDebugInfo(oidcAuthorization);
+
+        console.info('[auth] OIDC authentication failed', {
+          clientId: oidcDebugInfo.clientId,
+          code: (e as { code?: string })?.code,
+          path: new URL(req.url).pathname,
+          provider: params?.provider,
+          userAgent: req.headers.get('user-agent'),
+          xClientType: req.headers.get('x-client-type'),
+        });
+      }
 
       // if the error is not a ChatCompletionErrorPayload, it means the application error
       if (!(e as ChatCompletionErrorPayload).errorType) {
-        if ((e as any).code === 'ERR_JWT_EXPIRED')
-          return createErrorResponse(ChatErrorType.SystemTimeNotMatchError, e);
+        if (isUnauthorizedAuthError(e)) {
+          return createErrorResponse(ChatErrorType.Unauthorized, {
+            error: e,
+            provider: params?.provider,
+          });
+        }
 
         // other issue will be internal server error
         console.error(e);

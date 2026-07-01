@@ -6,13 +6,14 @@ import { useTranslation } from 'react-i18next';
 
 import NeuralNetworkLoading from '@/components/NeuralNetworkLoading';
 import SkeletonList from '@/features/NavPanel/components/SkeletonList';
-import { useFetchTopics } from '@/hooks/useFetchTopics';
+import { useFetchChatTopics } from '@/hooks/useFetchChatTopics';
 import { useChatStore } from '@/store/chat';
 import { topicSelectors } from '@/store/chat/selectors';
 
 import Actions from './Actions';
 import Filter from './Filter';
 import List from './List';
+import ToggleGroups from './ToggleGroups';
 import { useTopicActionsDropdownMenu } from './useDropdownMenu';
 
 interface TopicProps {
@@ -23,7 +24,7 @@ const Topic = memo<TopicProps>(({ itemKey }) => {
   const { t } = useTranslation(['topic', 'common']);
   const [topicCount] = useChatStore((s) => [topicSelectors.currentTopicCount(s)]);
   const dropdownMenu = useTopicActionsDropdownMenu();
-  const { isRevalidating } = useFetchTopics({ excludeTriggers: ['cron', 'eval'] });
+  const { isRevalidating } = useFetchChatTopics();
 
   return (
     <AccordionItem
@@ -32,6 +33,7 @@ const Topic = memo<TopicProps>(({ itemKey }) => {
       paddingInline={'8px 4px'}
       action={
         <Flexbox horizontal align="center" gap={2}>
+          <ToggleGroups />
           <Filter />
           <Actions />
         </Flexbox>
@@ -42,8 +44,13 @@ const Topic = memo<TopicProps>(({ itemKey }) => {
       title={
         <Flexbox horizontal align="center" gap={4}>
           <Text ellipsis fontSize={12} type={'secondary'} weight={500}>
-            {`${t('title')} ${topicCount > 0 ? topicCount : ''}`}
+            {t('sidebar.title')}
           </Text>
+          {topicCount > 0 && (
+            <Text fontSize={11} type="secondary">
+              {topicCount}
+            </Text>
+          )}
           {isRevalidating && <NeuralNetworkLoading size={14} />}
         </Flexbox>
       }

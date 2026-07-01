@@ -2,7 +2,7 @@ import process from 'node:process';
 
 import type { ElectronAppState, ThemeMode } from '@lobechat/electron-client-ipc';
 import { app, dialog, nativeTheme, shell } from 'electron';
-import { macOS } from 'electron-is';
+import * as electronIs from 'electron-is';
 import { pathExists, readdir } from 'fs-extra';
 
 import { legacyLocalDbDir } from '@/const/dir';
@@ -103,7 +103,7 @@ export default class SystemController extends ControllerModule {
       return 'granted';
     }
 
-    if (!macOS()) {
+    if (!electronIs.macOS()) {
       logger.info('[FullDiskAccess] Not macOS, returning granted');
       return 'granted';
     }
@@ -185,6 +185,19 @@ export default class SystemController extends ControllerModule {
 
     const folderPath = result.filePaths[0];
     const repoType = await detectRepoType(folderPath);
+
+    try {
+      const approvedRoot = await this.app.localFileProtocolManager.approveWorkspaceRoot(folderPath);
+
+      if (approvedRoot) {
+        const storedRoots = this.app.storeManager.get('localFileWorkspaceRoots', []);
+        if (!storedRoots.includes(approvedRoot)) {
+          this.app.storeManager.set('localFileWorkspaceRoots', [approvedRoot, ...storedRoots]);
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to approve local file workspace root ${folderPath}:`, error);
+    }
 
     return { path: folderPath, repoType };
   }

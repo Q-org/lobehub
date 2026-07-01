@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, isNull, notInArray } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray, isNull, notInArray } from 'drizzle-orm';
 
 import { agentsToSessions, messages, topics, users } from '@/database/schemas';
 import type { LobeChatDatabase } from '@/database/type';
@@ -15,8 +15,8 @@ import type {
 } from '../types/topic.type';
 
 export class TopicService extends BaseService {
-  constructor(db: LobeChatDatabase, userId: string | null) {
-    super(db, userId);
+  constructor(db: LobeChatDatabase, userId: string | null, workspaceId?: string) {
+    super(db, userId, workspaceId);
   }
 
   /**
@@ -37,9 +37,8 @@ export class TopicService extends BaseService {
       const conditions = [];
 
       // Add permission-related query conditions
-      if (permissionResult?.condition?.userId) {
-        conditions.push(eq(topics.userId, permissionResult.condition.userId));
-      }
+      const permissionWhere = this.buildPermissionWhere(topics, permissionResult.condition);
+      if (permissionWhere) conditions.push(permissionWhere);
 
       // Filter by groupId first
       if (request.groupId) {
@@ -49,7 +48,12 @@ export class TopicService extends BaseService {
         const [relation] = await this.db
           .select({ sessionId: agentsToSessions.sessionId })
           .from(agentsToSessions)
-          .where(eq(agentsToSessions.agentId, request.agentId))
+          .where(
+            and(
+              eq(agentsToSessions.agentId, request.agentId),
+              this.buildWorkspaceWhere(agentsToSessions),
+            ),
+          )
           .limit(1);
 
         if (relation) {
@@ -65,8 +69,10 @@ export class TopicService extends BaseService {
         conditions.push(isNull(topics.agentId));
       }
 
-      // Exclude topics with specified trigger sources
-      if (request.excludeTriggers && request.excludeTriggers.length > 0) {
+      // includeTriggers takes precedence over excludeTriggers when both are provided
+      if (request.includeTriggers && request.includeTriggers.length > 0) {
+        conditions.push(inArray(topics.trigger, request.includeTriggers));
+      } else if (request.excludeTriggers && request.excludeTriggers.length > 0) {
         conditions.push(notInArray(topics.trigger, request.excludeTriggers));
       }
 
@@ -129,9 +135,8 @@ export class TopicService extends BaseService {
       const whereConditions = [eq(topics.id, topicId)];
 
       // Apply permission conditions
-      if (permissionResult.condition?.userId) {
-        whereConditions.push(eq(topics.userId, permissionResult.condition.userId));
-      }
+      const permissionWhere = this.buildPermissionWhere(topics, permissionResult.condition);
+      if (permissionWhere) whereConditions.push(permissionWhere);
 
       const [result] = await this.db
         .select({
@@ -176,7 +181,9 @@ export class TopicService extends BaseService {
         const [relation] = await this.db
           .select({ sessionId: agentsToSessions.sessionId })
           .from(agentsToSessions)
-          .where(eq(agentsToSessions.agentId, agentId))
+          .where(
+            and(eq(agentsToSessions.agentId, agentId), this.buildWorkspaceWhere(agentsToSessions)),
+          )
           .limit(1);
 
         effectiveSessionId = relation?.sessionId ?? null;
@@ -201,7 +208,7 @@ export class TopicService extends BaseService {
           id: idGenerator('topics'),
           sessionId: effectiveSessionId,
           title,
-          userId: this.userId,
+          ...this.buildWorkspacePayload({}),
         })
         .returning();
 
@@ -232,9 +239,8 @@ export class TopicService extends BaseService {
       const whereConditions = [eq(topics.id, topicId)];
 
       // Apply permission conditions
-      if (permissionResult.condition?.userId) {
-        whereConditions.push(eq(topics.userId, permissionResult.condition.userId));
-      }
+      const permissionWhere = this.buildPermissionWhere(topics, permissionResult.condition);
+      if (permissionWhere) whereConditions.push(permissionWhere);
 
       const [updatedTopic] = await this.db
         .update(topics)
@@ -271,9 +277,8 @@ export class TopicService extends BaseService {
       const whereConditions = [eq(topics.id, topicId)];
 
       // Apply permission conditions
-      if (permissionResult.condition?.userId) {
-        whereConditions.push(eq(topics.userId, permissionResult.condition.userId));
-      }
+      const permissionWhere = this.buildPermissionWhere(topics, permissionResult.condition);
+      if (permissionWhere) whereConditions.push(permissionWhere);
 
       const [existingTopic] = await this.db
         .delete(topics)

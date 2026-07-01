@@ -39,8 +39,15 @@ export class BrowserManager {
 
   showMainWindow() {
     logger.debug('Showing main window');
-    const window = this.getMainWindow();
-    window.show();
+    const browser = this.getMainWindow();
+    const window = browser.browserWindow;
+
+    if (window.isMinimized()) {
+      window.restore();
+    }
+
+    browser.show();
+    window.focus();
   }
 
   broadcastToAllWindows = <T extends MainBroadcastEventKey>(
@@ -204,6 +211,23 @@ export class BrowserManager {
     return true;
   }
 
+  /**
+   * Open (or focus) the single-instance Quick Chat popup.
+   *
+   * The window is backed by the `topicPopup` template and the route
+   * `/popup/agent/inbox`, so it mounts a fresh Inbox conversation with no
+   * active topic. The first message creates a topic via the normal agent
+   * flow. The `uniqueId` is fixed — repeated invocations focus the existing
+   * window rather than spawning additional ones.
+   */
+  openQuickChatPopup() {
+    const uniqueId = 'topicPopup_quick_inbox';
+    const result = this.createMultiInstanceWindow('topicPopup', '/popup/agent/inbox', uniqueId);
+    result.browser.show();
+    result.browser.browserWindow.focus();
+    return result;
+  }
+
   private emitTopicPopupsChanged(): void {
     this.broadcastToAllWindows('topicPopupsChanged', { popups: this.listTopicPopups() });
   }
@@ -233,6 +257,26 @@ export class BrowserManager {
   }
 
   /**
+   * Consume a route captured before an update restart. The captured route is
+   * cleared before any navigation decision so a subsequent normal launch never
+   * restores a stale route.
+   */
+  private consumePendingRestoreRoute(): string {
+    const pendingRestoreRoute = this.app.storeManager.get('pendingRestoreRoute', '');
+    if (pendingRestoreRoute) this.app.storeManager.set('pendingRestoreRoute', '');
+    return pendingRestoreRoute;
+  }
+
+  private resolveMainWindowInitialPath(
+    isOnboardingCompleted: boolean,
+    pendingRestoreRoute: string,
+  ): string {
+    if (!isOnboardingCompleted) return '/desktop-onboarding';
+    if (pendingRestoreRoute) return pendingRestoreRoute;
+    return '/';
+  }
+
+  /**
    * Initialize all browsers when app starts up
    */
   async initializeBrowsers() {
@@ -247,7 +291,11 @@ export class BrowserManager {
 
       // Dynamically determine initial path for main window
       if (browser.identifier === BrowsersIdentifiers.app) {
-        const initialPath = isOnboardingCompleted ? '/' : '/desktop-onboarding';
+        const pendingRestoreRoute = this.consumePendingRestoreRoute();
+        const initialPath = this.resolveMainWindowInitialPath(
+          isOnboardingCompleted,
+          pendingRestoreRoute,
+        );
         browser = {
           ...browser,
           keepAlive: isLinux ? false : browser.keepAlive,
@@ -318,6 +366,11 @@ export class BrowserManager {
   isWindowMaximized(identifier: string) {
     const browser = this.browsers.get(identifier);
     return browser?.browserWindow.isMaximized() ?? false;
+  }
+
+  isWindowFullScreen(identifier: string) {
+    const browser = this.browsers.get(identifier);
+    return browser?.browserWindow.isFullScreen() ?? false;
   }
 
   setWindowSize(identifier: string, size: { height?: number; width?: number }) {

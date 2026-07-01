@@ -1,6 +1,6 @@
 'use client';
 
-import { type IEditor } from '@lobehub/editor';
+import type { IEditor } from '@lobehub/editor';
 import { DiffAction, LITEXML_DIFFNODE_ALL_COMMAND } from '@lobehub/editor';
 import { Block, Icon } from '@lobehub/ui';
 import { Button, Space } from 'antd';
@@ -36,11 +36,19 @@ const styles = createStaticStyles(({ css }) => ({
   `,
 }));
 
-const useIsEditorInit = (editor: IEditor) => {
+const useIsEditorInit = (editor?: IEditor) => {
   const [isEditInit, setEditInit] = useState<boolean>(!!editor?.getLexicalEditor());
 
   useEffect(() => {
     if (!editor) return;
+
+    // The editor may have initialized between render and this effect
+    // (the Editor canvas mounts earlier and emits 'initialized' synchronously),
+    // so re-check before subscribing to avoid missing the event forever.
+    if (editor.getLexicalEditor()) {
+      setEditInit(true);
+      return;
+    }
 
     const onInit = () => {
       setEditInit(true);
@@ -54,7 +62,7 @@ const useIsEditorInit = (editor: IEditor) => {
   return isEditInit;
 };
 
-const useEditorHasPendingDiffs = (editor: IEditor) => {
+const useEditorHasPendingDiffs = (editor?: IEditor) => {
   const [hasPendingDiffs, setHasPendingDiffs] = useState(false);
   const isEditInit = useIsEditorInit(editor);
 
@@ -98,24 +106,20 @@ const useEditorHasPendingDiffs = (editor: IEditor) => {
 
 interface DiffAllToolbarProps {
   documentId: string;
-  editor: IEditor;
+  editor?: IEditor;
 }
-const DiffAllToolbar = memo<DiffAllToolbarProps>(({ documentId }) => {
+const DiffAllToolbar = memo<DiffAllToolbarProps>(({ documentId, editor }) => {
   const { t } = useTranslation('editor');
   const isDarkMode = useIsDark();
-  const [storeEditor, performSave, markDirty] = useDocumentStore((s) => [
-    s.editor!,
-    s.performSave,
-    s.markDirty,
-  ]);
+  const [performSave, markDirty] = useDocumentStore((s) => [s.performSave, s.markDirty]);
 
-  const hasPendingDiffs = useEditorHasPendingDiffs(storeEditor);
+  const hasPendingDiffs = useEditorHasPendingDiffs(editor);
 
-  if (!hasPendingDiffs) return null;
+  if (!editor || !hasPendingDiffs) return null;
 
   const handleSave = async () => {
     markDirty(documentId);
-    await performSave(undefined, undefined, { saveSource: 'manual' });
+    await performSave(documentId, undefined, { saveSource: 'manual' });
   };
 
   return (
@@ -133,7 +137,7 @@ const DiffAllToolbar = memo<DiffAllToolbarProps>(({ documentId }) => {
             size={'small'}
             type="text"
             onClick={async () => {
-              storeEditor?.dispatchCommand(LITEXML_DIFFNODE_ALL_COMMAND, {
+              editor.dispatchCommand(LITEXML_DIFFNODE_ALL_COMMAND, {
                 action: DiffAction.Reject,
               });
               await handleSave();
@@ -147,7 +151,7 @@ const DiffAllToolbar = memo<DiffAllToolbarProps>(({ documentId }) => {
             size={'small'}
             variant="filled"
             onClick={async () => {
-              storeEditor?.dispatchCommand(LITEXML_DIFFNODE_ALL_COMMAND, {
+              editor.dispatchCommand(LITEXML_DIFFNODE_ALL_COMMAND, {
                 action: DiffAction.Accept,
               });
               await handleSave();

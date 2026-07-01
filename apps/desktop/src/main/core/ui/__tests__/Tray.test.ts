@@ -1,4 +1,4 @@
-import { app, Menu, nativeImage,Tray as ElectronTray } from 'electron';
+import { app, Menu, nativeImage, Tray as ElectronTray } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { App } from '../../App';
@@ -47,6 +47,7 @@ describe('Tray', () => {
     mockElectronTray = {
       setToolTip: vi.fn(),
       setContextMenu: vi.fn(),
+      popUpContextMenu: vi.fn(),
       setImage: vi.fn(),
       on: vi.fn(),
       destroy: vi.fn(),
@@ -74,11 +75,16 @@ describe('Tray', () => {
         showMainWindow: vi.fn(),
         getMainWindow: vi.fn(() => mockMainWindow),
       },
+      screenCaptureManager: {
+        startSession: vi.fn(),
+      },
     } as unknown as App;
 
     // Mock electron constructors
     vi.mocked(ElectronTray).mockImplementation(() => mockElectronTray);
-    vi.mocked(nativeImage.createFromPath).mockReturnValue({} as any);
+    vi.mocked(nativeImage.createFromPath).mockReturnValue({
+      setTemplateImage: vi.fn(),
+    } as any);
     vi.mocked(Menu.buildFromTemplate).mockReturnValue({} as any);
   });
 
@@ -168,7 +174,7 @@ describe('Tray', () => {
       expect(mockElectronTray.on).toHaveBeenCalledWith('click', expect.any(Function));
     });
 
-    it('should set default context menu', () => {
+    it('should build the default context menu and store it in-house', () => {
       tray = new Tray(
         {
           iconPath: 'tray.png',
@@ -178,7 +184,24 @@ describe('Tray', () => {
       );
 
       expect(Menu.buildFromTemplate).toHaveBeenCalled();
-      expect(mockElectronTray.setContextMenu).toHaveBeenCalled();
+      // We no longer hand the menu to Electron directly; macOS would hijack
+      // left-click if we did. The menu is popped up manually on right-click.
+      expect(mockElectronTray.setContextMenu).not.toHaveBeenCalled();
+    });
+
+    it('should register click, double-click and right-click listeners', () => {
+      tray = new Tray(
+        {
+          iconPath: 'tray.png',
+          identifier: 'test-tray',
+        },
+        mockApp,
+      );
+
+      const events = mockElectronTray.on.mock.calls.map((c: any[]) => c[0]);
+      expect(events).toContain('click');
+      expect(events).toContain('double-click');
+      expect(events).toContain('right-click');
     });
 
     it('should handle errors when creating tray', () => {
@@ -221,7 +244,9 @@ describe('Tray', () => {
           expect.objectContaining({ label: 'Quit' }),
         ]),
       );
-      expect(mockElectronTray.setContextMenu).toHaveBeenCalled();
+      // Menu is stored for manual popup on right-click — never handed to
+      // `_tray.setContextMenu`, which would steal left-click on macOS.
+      expect(mockElectronTray.setContextMenu).not.toHaveBeenCalled();
     });
 
     it('should set custom context menu when template provided', () => {
@@ -233,7 +258,37 @@ describe('Tray', () => {
       tray.setContextMenu(customTemplate);
 
       expect(Menu.buildFromTemplate).toHaveBeenCalledWith(customTemplate);
-      expect(mockElectronTray.setContextMenu).toHaveBeenCalled();
+      expect(mockElectronTray.setContextMenu).not.toHaveBeenCalled();
+    });
+
+    it('should pop up the stored menu on right-click', () => {
+      // beforeEach cleared mocks after constructing the tray, so capture the
+      // right-click handler from a fresh instance.
+      const mockTrayForRightClick = {
+        setToolTip: vi.fn(),
+        setContextMenu: vi.fn(),
+        popUpContextMenu: vi.fn(),
+        setImage: vi.fn(),
+        on: vi.fn(),
+        destroy: vi.fn(),
+        displayBalloon: vi.fn(),
+      };
+      vi.mocked(ElectronTray).mockImplementationOnce(() => mockTrayForRightClick as any);
+
+      const builtMenu = { _mockMenu: true } as any;
+      vi.mocked(Menu.buildFromTemplate).mockReturnValue(builtMenu);
+
+      const freshTray = new Tray({ iconPath: 'tray.png', identifier: 'rc-tray' }, mockApp);
+      freshTray.setContextMenu();
+
+      const rightClickHandler = mockTrayForRightClick.on.mock.calls.find(
+        (c: any[]) => c[0] === 'right-click',
+      )?.[1];
+      expect(rightClickHandler).toBeDefined();
+
+      rightClickHandler?.();
+
+      expect(mockTrayForRightClick.popUpContextMenu).toHaveBeenCalledWith(builtMenu);
     });
 
     it('should call showMainWindow when Show Main Window is clicked', () => {
@@ -270,42 +325,115 @@ describe('Tray', () => {
       );
     });
 
-    it('should hide window when it is visible and focused', () => {
-      mockBrowserWindow.isVisible.mockReturnValue(true);
-      mockBrowserWindow.isFocused.mockReturnValue(true);
-
+    it('should start the Quick Composer capture session', () => {
       tray.onClick();
 
-      expect(mockMainWindow.hide).toHaveBeenCalled();
+      expect(mockApp.screenCaptureManager.startSession).toHaveBeenCalled();
+    });
+
+    it('should not touch main window visibility', () => {
+      tray.onClick();
+
+      expect(mockMainWindow.hide).not.toHaveBeenCalled();
       expect(mockMainWindow.show).not.toHaveBeenCalled();
     });
 
-    it('should show and focus window when it is not visible', () => {
-      mockBrowserWindow.isVisible.mockReturnValue(false);
-      mockBrowserWindow.isFocused.mockReturnValue(false);
-
-      tray.onClick();
-
-      expect(mockMainWindow.show).toHaveBeenCalled();
-      expect(mockBrowserWindow.focus).toHaveBeenCalled();
-      expect(mockMainWindow.hide).not.toHaveBeenCalled();
-    });
-
-    it('should show and focus window when it is visible but not focused', () => {
-      mockBrowserWindow.isVisible.mockReturnValue(true);
-      mockBrowserWindow.isFocused.mockReturnValue(false);
-
-      tray.onClick();
-
-      expect(mockMainWindow.show).toHaveBeenCalled();
-      expect(mockBrowserWindow.focus).toHaveBeenCalled();
-      expect(mockMainWindow.hide).not.toHaveBeenCalled();
-    });
-
-    it('should handle case when main window is null', () => {
-      vi.mocked(mockApp.browserManager.getMainWindow).mockReturnValue(null);
+    it('should not throw when startSession rejects', () => {
+      vi.mocked(mockApp.screenCaptureManager.startSession).mockImplementationOnce(() => {
+        throw new Error('capture failed');
+      });
 
       expect(() => tray.onClick()).not.toThrow();
+    });
+  });
+
+  describe('onDoubleClick', () => {
+    beforeEach(() => {
+      tray = new Tray(
+        {
+          iconPath: 'tray.png',
+          identifier: 'test-tray',
+        },
+        mockApp,
+      );
+    });
+
+    it('should show the main window', () => {
+      tray.onDoubleClick();
+
+      expect(mockApp.browserManager.showMainWindow).toHaveBeenCalled();
+    });
+
+    it('should not start the capture session', () => {
+      tray.onDoubleClick();
+
+      expect(mockApp.screenCaptureManager.startSession).not.toHaveBeenCalled();
+    });
+
+    it('should not throw when showMainWindow throws', () => {
+      vi.mocked(mockApp.browserManager.showMainWindow).mockImplementationOnce(() => {
+        throw new Error('window failed');
+      });
+
+      expect(() => tray.onDoubleClick()).not.toThrow();
+    });
+  });
+
+  describe('click vs double-click handling', () => {
+    let clickHandler: (() => void) | undefined;
+    let doubleClickHandler: (() => void) | undefined;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      tray = new Tray(
+        {
+          iconPath: 'tray.png',
+          identifier: 'test-tray',
+        },
+        mockApp,
+      );
+
+      clickHandler = mockElectronTray.on.mock.calls.find((c: any[]) => c[0] === 'click')?.[1];
+      doubleClickHandler = mockElectronTray.on.mock.calls.find(
+        (c: any[]) => c[0] === 'double-click',
+      )?.[1];
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('should debounce single click before calling startSession', () => {
+      expect(clickHandler).toBeDefined();
+
+      clickHandler?.();
+      expect(mockApp.screenCaptureManager.startSession).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(250);
+      expect(mockApp.screenCaptureManager.startSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('should cancel the pending single click when double-click fires', () => {
+      expect(clickHandler).toBeDefined();
+      expect(doubleClickHandler).toBeDefined();
+
+      clickHandler?.();
+      clickHandler?.();
+      doubleClickHandler?.();
+
+      vi.advanceTimersByTime(1000);
+
+      expect(mockApp.screenCaptureManager.startSession).not.toHaveBeenCalled();
+      expect(mockApp.browserManager.showMainWindow).toHaveBeenCalledTimes(1);
+    });
+
+    it('should only fire startSession once per single-click burst', () => {
+      clickHandler?.();
+      clickHandler?.();
+
+      vi.advanceTimersByTime(250);
+
+      expect(mockApp.screenCaptureManager.startSession).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -504,11 +632,9 @@ describe('Tray', () => {
       tray.updateTooltip('New Tooltip');
       expect(mockElectronTray.setToolTip).toHaveBeenCalledWith('New Tooltip');
 
-      // Test click behavior
-      mockBrowserWindow.isVisible.mockReturnValue(true);
-      mockBrowserWindow.isFocused.mockReturnValue(true);
+      // Test click behavior — now opens the Quick Composer session
       tray.onClick();
-      expect(mockMainWindow.hide).toHaveBeenCalled();
+      expect(mockApp.screenCaptureManager.startSession).toHaveBeenCalled();
 
       // Destroy
       tray.destroy();

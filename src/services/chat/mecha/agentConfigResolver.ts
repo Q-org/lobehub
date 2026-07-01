@@ -1,6 +1,7 @@
 import { type BuiltinAgentSlug } from '@lobechat/builtin-agents';
 import { BUILTIN_AGENT_SLUGS, getAgentRuntimeConfig } from '@lobechat/builtin-agents';
 import { PageAgentIdentifier } from '@lobechat/builtin-tool-page-agent';
+import { TaskIdentifier } from '@lobechat/builtin-tool-task';
 import { type LobeToolManifest } from '@lobechat/context-engine';
 import {
   type ChatCompletionTool,
@@ -86,10 +87,11 @@ export interface AgentConfigResolverContext {
   groupId?: string;
 
   /**
-   * Whether this is a sub-task execution.
-   * When true, filters out lobe-gtd tools to prevent nested sub-task creation.
+   * Whether this is a sub-agent execution.
+   * When true, filters out the lobe-agent tool (which owns the sub-agent
+   * dispatch APIs) to prevent nested sub-agent creation.
    */
-  isSubTask?: boolean;
+  isSubAgent?: boolean;
 
   /** Current model being used (for template variables) */
   model?: string;
@@ -142,26 +144,39 @@ export interface ResolvedAgentConfig {
  * For regular agents, this simply returns the config from the store.
  */
 export const resolveAgentConfig = (ctx: AgentConfigResolverContext): ResolvedAgentConfig => {
-  const { agentId, model, documentContent, plugins, targetAgentConfig, isSubTask, disableTools } =
+  const { agentId, model, documentContent, plugins, targetAgentConfig, isSubAgent, disableTools } =
     ctx;
 
   log(
-    'resolveAgentConfig called with agentId: %s, scope: %s, isSubTask: %s, disableTools: %s',
+    'resolveAgentConfig called with agentId: %s, scope: %s, isSubAgent: %s, disableTools: %s',
     agentId,
     ctx.scope,
-    isSubTask,
+    isSubAgent,
     disableTools,
   );
 
   // Helper to apply plugin filters:
   // 1. If disableTools is true, return empty array (for broadcast scenarios)
-  // 2. If isSubTask is true, filter out lobe-gtd to prevent nested sub-task creation
+  // 2. Drop page-agent outside page scope.
+  //
+  // lobe-agent's context trimming (hide `callSubAgent` in group / sub-agent runs)
+  // now lives in its manifest resolver (resolveLobeAgentManifest), applied at
+  // tools-engine build time. That keeps lobe-agent's plan / todo / visual-media
+  // available to sub-agents — only the nested dispatch API is removed — instead of
+  // dropping the whole tool here.
   const applyPluginFilters = (pluginIds: string[]) => {
     if (disableTools) {
       log('disableTools is true, returning empty plugins');
       return [];
     }
-    return isSubTask ? pluginIds.filter((id) => id !== 'lobe-gtd') : pluginIds;
+
+    let nextPluginIds = pluginIds;
+
+    if (ctx.scope !== 'page') {
+      nextPluginIds = nextPluginIds.filter((id) => id !== PageAgentIdentifier);
+    }
+
+    return nextPluginIds;
   };
 
   const agentStoreState = getAgentStoreState();
@@ -288,6 +303,31 @@ export const resolveAgentConfig = (ctx: AgentConfigResolverContext): ResolvedAge
       };
     }
 
+    if (ctx.scope === 'task') {
+      const taskAgentPlugins = finalPlugins.includes(TaskIdentifier)
+        ? finalPlugins
+        : [TaskIdentifier, ...finalPlugins];
+      const taskAgentRuntime = getAgentRuntimeConfig(BUILTIN_AGENT_SLUGS.taskAgent, {});
+      const taskAgentSystemRole = taskAgentRuntime?.systemRole || '';
+      const mergedSystemRole = taskAgentSystemRole
+        ? systemRoleWithLocale
+          ? `${systemRoleWithLocale}\n\n${taskAgentSystemRole}`
+          : taskAgentSystemRole
+        : systemRoleWithLocale || '';
+
+      finalAgentConfig = {
+        ...finalAgentConfig,
+        systemRole: mergedSystemRole,
+      };
+
+      return {
+        agentConfig: finalAgentConfig,
+        chatConfig: finalChatConfig,
+        isBuiltinAgent: false,
+        plugins: applyPluginFilters(taskAgentPlugins),
+      };
+    }
+
     // Not in page scope - return standard config
     return {
       agentConfig: finalAgentConfig,
@@ -371,6 +411,12 @@ export const resolveAgentConfig = (ctx: AgentConfigResolverContext): ResolvedAge
     ...chatConfig,
     ...runtimeConfig?.chatConfig,
   };
+  const resolvedAgencyConfig = runtimeConfig?.agencyConfig
+    ? {
+        ...agentConfig.agencyConfig,
+        ...runtimeConfig.agencyConfig,
+      }
+    : agentConfig.agencyConfig;
 
   // === Page Editor Auto-Injection for Builtin Agents ===
   // When a builtin agent (other than page-agent itself) is used in page editor,
@@ -399,9 +445,25 @@ export const resolveAgentConfig = (ctx: AgentConfigResolverContext): ResolvedAge
     };
   }
 
+  if (ctx.scope === 'task' && slug !== BUILTIN_AGENT_SLUGS.taskAgent) {
+    if (!finalPlugins.includes(TaskIdentifier)) {
+      finalPlugins = [TaskIdentifier, ...finalPlugins];
+    }
+
+    const taskAgentRuntime = getAgentRuntimeConfig(BUILTIN_AGENT_SLUGS.taskAgent, {});
+    const taskAgentSystemRole = taskAgentRuntime?.systemRole || '';
+
+    if (taskAgentSystemRole) {
+      resolvedSystemRole = resolvedSystemRole
+        ? `${resolvedSystemRole}\n\n${taskAgentSystemRole}`
+        : taskAgentSystemRole;
+    }
+  }
+
   // Merge runtime systemRole into agent config
   const resolvedAgentConfig: LobeAgentConfig = {
     ...agentConfig,
+    ...(resolvedAgencyConfig ? { agencyConfig: resolvedAgencyConfig } : {}),
     systemRole: resolvedSystemRole,
   };
 

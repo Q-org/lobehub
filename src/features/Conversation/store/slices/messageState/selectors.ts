@@ -32,6 +32,23 @@ const messageEditingIds = (s: State) => s.messageEditingIds;
  */
 const messageLoadingIds = (s: State) => s.messageLoadingIds;
 
+// ===== Multi-select selectors =====
+
+/**
+ * Whether the conversation is in multi-select mode
+ */
+const isSelectionMode = (s: State) => s.selectionMode;
+
+/**
+ * Whether a given message is checked in multi-select mode
+ */
+const isMessageSelected = (id: string) => (s: State) => s.selectedMessageIds.includes(id);
+
+/**
+ * Number of checked messages
+ */
+const selectedMessageCount = (s: State) => s.selectedMessageIds.length;
+
 // ===== Operation-based selectors (read from external operationState) =====
 // Note: These selectors read from operationState which is passed externally from ChatStore.
 // This ensures proper React reactivity while keeping operations global.
@@ -62,6 +79,27 @@ const isMessageCreating = (id: string) => (s: State) =>
  */
 const isMessageGenerating = (id: string) => (s: State) =>
   s.operationState.getMessageOperationState(id).isGenerating;
+
+/**
+ * Check if an AssistantGroup root or child block is generating.
+ * A group is generating when itself or any child block has a running generation operation.
+ * A child block is generating when itself or its parent group has a running generation operation.
+ */
+const isAssistantGroupItemGenerating = (id: string) => (s: State) => {
+  if (isMessageGenerating(id)(s)) return true;
+
+  const message = s.displayMessages.find((item) => item.id === id);
+  if (message?.role === 'assistantGroup') {
+    return message.children?.some((block) => isMessageGenerating(block.id)(s)) ?? false;
+  }
+
+  const parentMessage = s.displayMessages.find(
+    (message) =>
+      message.role === 'assistantGroup' && message.children?.some((block) => block.id === id),
+  );
+
+  return parentMessage ? isMessageGenerating(parentMessage.id)(s) : false;
+};
 
 /**
  * Check if a message is being regenerated
@@ -149,6 +187,7 @@ const isThreadMode = (_s: State) => {
 export const messageStateSelectors = {
   hasThreadBySourceMsgId,
   isAIGenerating,
+  isAssistantGroupItemGenerating,
   isInputLoading,
   isMessageCollapsed,
   isMessageContinuing,
@@ -160,11 +199,14 @@ export const messageStateSelectors = {
   isMessageLoading,
   isMessageProcessing,
   isMessageRegenerating,
+  isMessageSelected,
   isPluginApiInvoking,
+  isSelectionMode,
   isThreadMode,
   isToolApiNameShining,
   isToolCallStreaming,
   messageEditingIds,
   messageLoadingIds,
+  selectedMessageCount,
   sendMessageError,
 };

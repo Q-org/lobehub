@@ -1,12 +1,13 @@
 export type HotkeyId =
   | 'addUserMessage'
-  | 'clearCurrentMessages'
   | 'commandPalette'
   | 'deleteAndRegenerateMessage'
   | 'deleteLastMessage'
   | 'editMessage'
   | 'navigateToChat'
+  | 'nextTab'
   | 'openChatSettings'
+  | 'prevTab'
   | 'openHotkeyHelper'
   | 'regenerateMessage'
   | 'saveDocument'
@@ -14,9 +15,9 @@ export type HotkeyId =
   | 'search'
   | 'showApp'
   | 'switchAgent'
+  | 'switchTab'
   | 'toggleLeftPanel'
-  | 'toggleRightPanel'
-  | 'toggleZenMode';
+  | 'toggleRightPanel';
 
 export type HotkeyGroupId = 'conversation' | 'essential';
 
@@ -32,7 +33,7 @@ export interface HotkeyItem {
 
 export type HotkeyRegistration = HotkeyItem[];
 
-export type DesktopHotkeyId = 'openSettings' | 'showApp';
+export type DesktopHotkeyId = 'openSettings' | 'quickChat' | 'quickComposer' | 'showApp';
 
 export interface DesktopHotkeyItem {
   id: DesktopHotkeyId;

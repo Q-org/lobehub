@@ -1,9 +1,10 @@
 import { ActionIcon, DropdownMenu, Flexbox, Icon } from '@lobehub/ui';
 import { cssVar } from 'antd-style';
-import { CheckSquareIcon, FileTextIcon, HashIcon, MoreHorizontalIcon } from 'lucide-react';
+import { FileTextIcon, HashIcon, MoreHorizontalIcon } from 'lucide-react';
 import { memo, useCallback, useState } from 'react';
 
 import InlineRename from '@/components/InlineRename';
+import TaskStatusIcon from '@/features/AgentTasks/features/TaskStatusIcon';
 import NavItem from '@/features/NavPanel/components/NavItem';
 import { usePrefetchAgent } from '@/hooks/usePrefetchAgent';
 import { usePrefetchPage } from '@/hooks/usePrefetchPage';
@@ -12,14 +13,13 @@ import { type RecentItem } from '@/server/routers/lambda/recent';
 
 import { useRecentItemDropdownMenu } from './useDropdownMenu';
 
-const TYPE_ICON_MAP = {
+const TYPE_ICON_MAP: Partial<Record<'document' | 'task' | 'topic', typeof FileTextIcon>> = {
   document: FileTextIcon,
-  task: CheckSquareIcon,
   topic: HashIcon,
 };
 
 const RecentListItem = memo<RecentItem>((item) => {
-  const { title, type, agentId, id, metadata } = item;
+  const { title, type, agentId, id, metadata, status } = item;
   const IconComponent = TYPE_ICON_MAP[type] || FileTextIcon;
   const [editing, setEditing] = useState(false);
   const prefetchAgent = usePrefetchAgent();
@@ -57,6 +57,10 @@ const RecentListItem = memo<RecentItem>((item) => {
           </DropdownMenu>
         }
         icon={(() => {
+          if (type === 'task') {
+            return <TaskStatusIcon size={16} status={status ?? 'backlog'} />;
+          }
+
           if (type === 'topic' && metadata?.bot?.platform) {
             const ProviderIcon = getPlatformIcon(metadata.bot.platform);
             if (ProviderIcon) {

@@ -16,9 +16,8 @@ const mockDetail: TaskDetailData = {
   identifier: 'T-1',
   instruction: 'Do something',
   name: 'Test Task',
-  parent: { identifier: 'T-0', name: 'Parent' },
+  parent: { agentId: 'agt_parent', identifier: 'T-0', name: 'Parent' },
   priority: 2,
-  review: { enabled: false },
   status: 'running',
   subtasks: [{ identifier: 'T-1-1', name: 'Sub', status: 'backlog' }],
   topicCount: 3,
@@ -115,6 +114,7 @@ describe('taskDetailSelectors', () => {
 
     it('should return activeTaskParent', () => {
       expect(taskDetailSelectors.activeTaskParent(state)?.identifier).toBe('T-0');
+      expect(taskDetailSelectors.activeTaskParent(state)?.agentId).toBe('agt_parent');
     });
 
     it('should return activeTaskTopicCount', () => {
@@ -155,10 +155,18 @@ describe('taskDetailSelectors', () => {
       expect(taskDetailSelectors.canRunActiveTask(state)).toBe(false);
     });
 
-    it('should return false when no agentId', () => {
+    it('should return true when no agentId is assigned yet', () => {
       const state = createState({
         activeTaskId: 'T-1',
-        taskDetailMap: { 'T-1': { ...mockDetail, agentId: null } },
+        taskDetailMap: { 'T-1': { ...mockDetail, agentId: null, status: 'backlog' } },
+      });
+      expect(taskDetailSelectors.canRunActiveTask(state)).toBe(true);
+    });
+
+    it('should return false for scheduled task (automation owns the next run)', () => {
+      const state = createState({
+        activeTaskId: 'T-1',
+        taskDetailMap: { 'T-1': { ...mockDetail, status: 'scheduled' } },
       });
       expect(taskDetailSelectors.canRunActiveTask(state)).toBe(false);
     });
@@ -180,10 +188,18 @@ describe('taskDetailSelectors', () => {
       });
       expect(taskDetailSelectors.canPauseActiveTask(state)).toBe(false);
     });
+
+    it('should return false for scheduled task', () => {
+      const state = createState({
+        activeTaskId: 'T-1',
+        taskDetailMap: { 'T-1': { ...mockDetail, status: 'scheduled' } },
+      });
+      expect(taskDetailSelectors.canPauseActiveTask(state)).toBe(false);
+    });
   });
 
   describe('canCancelActiveTask', () => {
-    it.each(['running', 'paused', 'backlog'] as const)(
+    it.each(['running', 'paused', 'backlog', 'scheduled'] as const)(
       'should return true for %s task',
       (status) => {
         const state = createState({
