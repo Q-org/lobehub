@@ -5,7 +5,8 @@ import {
   AGENT_CHAT_TOPIC_URL,
   DESKTOP_HEADER_ICON_SMALL_SIZE,
 } from '@lobechat/const';
-import { ActionIcon, Flexbox } from '@lobehub/ui';
+import { Flexbox } from '@lobehub/ui';
+import { ActionIcon } from '@lobehub/ui/base-ui';
 import { ArrowLeft, X } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
 import { memo } from 'react';
@@ -16,7 +17,11 @@ import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwar
 import { useChatStore } from '@/store/chat';
 import { chatPortalSelectors } from '@/store/chat/selectors';
 
-const Header = memo<{ rightExtra?: ReactNode; title: ReactNode }>(({ title, rightExtra }) => {
+const Header = memo<{
+  paddingInline?: number;
+  rightExtra?: ReactNode;
+  title: ReactNode;
+}>(({ paddingInline = 8, rightExtra, title }) => {
   const location = useLocation();
   const navigate = useWorkspaceAwareNavigate();
   const params = useParams<{ aid?: string; topicId?: string }>();
@@ -33,9 +38,9 @@ const Header = memo<{ rightExtra?: ReactNode; title: ReactNode }>(({ title, righ
   return (
     <NavHeader
       showTogglePanelButton={false}
-      style={{ paddingBlock: 8, paddingInline: 8 }}
+      style={{ paddingBlock: 8, paddingInline, width: '100%' }}
       left={
-        <Flexbox horizontal align="center" gap={4}>
+        <Flexbox horizontal align="center" flex={1} gap={4} style={{ minWidth: 0 }}>
           {canGoBack && (
             <ActionIcon icon={ArrowLeft} size={DESKTOP_HEADER_ICON_SMALL_SIZE} onClick={goBack} />
           )}
@@ -61,7 +66,12 @@ const Header = memo<{ rightExtra?: ReactNode; title: ReactNode }>(({ title, righ
       }
       styles={{
         left: {
-          marginLeft: canGoBack ? 0 : 6,
+          flex: 1,
+          marginLeft: canGoBack || paddingInline !== 8 ? 0 : 6,
+          minWidth: 0,
+        },
+        right: {
+          flex: 'none',
         },
       }}
     />

@@ -1,15 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { type AssistantContentBlock } from '@/types/index';
+import type { AssistantContentBlock } from '@/types/index';
 
-import { POST_TOOL_FINAL_ANSWER_SCORE_THRESHOLD } from './constants';
 import {
-  getPostToolAnswerSplitIndex,
   getToolDisplayName,
   getWorkflowStreamingHeadlineState,
   getWorkflowSummaryText,
-  scoreBlockContentAsAnswerLike,
-  scorePostToolBlockAsFinalAnswer,
   shapeProseForWorkflowHeadline,
 } from './toolDisplayNames';
 
@@ -63,9 +59,9 @@ describe('tool display names', () => {
     // total calls (15) leads, "calls total" / "共" wording is gone
     expect(summary.startsWith('15 calls:')).toBe(true);
     expect(summary).not.toContain('calls total');
-    // truncated tool list is followed by the kind count, then the failure count
+    // truncated tool list is followed by the kind count; failures stay in the details
     expect(summary).toContain('across 6 tools');
-    expect(summary).toContain('1 failed');
+    expect(summary).not.toContain('failed');
   });
 
   it('omits the total call count when each tool is called once', () => {
@@ -86,6 +82,20 @@ describe('tool display names', () => {
     expect(getToolDisplayName('mcp__claude_ai_Linear__save_issue')).toBe('Linear · Save issue');
     expect(getToolDisplayName('mcp__linear-server__get_issue')).toBe('Linear · Get issue');
   });
+
+  it('uses friendly labels for the in-app browser MCP tool names', () => {
+    // Title-casing the wire name yields "Mcp  lobe cc  browser navigate".
+    // Past tense: the summary reports what already ran, not an offer to run it.
+    expect(getToolDisplayName('mcp__lobe_cc__browser_navigate')).toBe('Opened page');
+    expect(getToolDisplayName('mcp__lobe_cc__browser_screenshot')).toBe('Captured screenshot');
+    expect(getToolDisplayName('mcp__lobe_cc__browser_read_page')).toBe('Read page text');
+    // `snapshot` returns the a11y tree — say what the agent got, not the wire name.
+    expect(getToolDisplayName('mcp__lobe_cc__browser_snapshot')).toBe('Read page elements');
+  });
+
+  it('leaves unknown MCP tools on the title-case fallback', () => {
+    expect(getToolDisplayName('mcp__lobe_cc__something_else')).toBe('Mcp__lobe_cc__something_else');
+  });
 });
 
 describe('shapeProseForWorkflowHeadline', () => {
@@ -104,43 +114,6 @@ describe('shapeProseForWorkflowHeadline', () => {
     expect(out).toContain('Node.js 24');
     expect(out).toContain('release notes');
     expect(out).not.toContain('Then crawl');
-  });
-});
-
-describe('post-tool final answer split', () => {
-  it('scores long structured content as answer-like even when tools share the block', () => {
-    const score = scoreBlockContentAsAnswerLike(
-      blk({
-        id: 'mixed',
-        content:
-          '先总结当前结论。\n\n## 下一步\n\n- 对比方案 A\n- 对比方案 B\n- 给出推荐与风险说明。',
-        tools: [{ apiName: 'search', id: 't1' } as any],
-      }),
-    );
-
-    expect(score).toBeGreaterThanOrEqual(POST_TOOL_FINAL_ANSWER_SCORE_THRESHOLD);
-  });
-
-  it('returns split index for long structured prose-only block after last tool', () => {
-    const long =
-      'Direct summary - Node.js 24 (released May 6, 2025) is a major platform update that upgrades V8 to a newer track, ships notable HTTP and fetch-related changes, and introduces practical migration items for native addons and tooling.\n\n## Checklist\n\n- Rebuild native modules';
-    const blocks = [
-      blk({ id: '0', content: 'intro', tools: [{ apiName: 'search', id: 't1' } as any] }),
-      blk({ id: '1', content: long }),
-    ];
-    const ix = getPostToolAnswerSplitIndex(blocks, 0, true, true);
-    expect(ix).toBe(1);
-  });
-
-  it('does not split short step line after tools', () => {
-    const blocks = [
-      blk({ id: '0', content: 'x', tools: [{ apiName: 'search', id: 't1' } as any] }),
-      blk({ id: '1', content: '现在我来搜索资料。' }),
-    ];
-    expect(scorePostToolBlockAsFinalAnswer(blocks[1]!)).toBeLessThan(
-      POST_TOOL_FINAL_ANSWER_SCORE_THRESHOLD,
-    );
-    expect(getPostToolAnswerSplitIndex(blocks, 0, true, true)).toBeNull();
   });
 });
 
@@ -187,9 +160,33 @@ describe('reasoning headline extraction', () => {
 
     expect(state).toEqual({
       explicitStep: 'Searched the web: Searching release notes',
-      fallbackTool: 'Searched the web: Node.js 24',
+      fallbackTool: 'Searched the web Node.js 24',
       kind: 'tool',
     });
+  });
+
+  it('renders the running headline as action label + keyword, never the raw args', () => {
+    const state = getWorkflowStreamingHeadlineState([
+      blk({
+        id: '0',
+        tools: [
+          {
+            apiName: 'Bash',
+            arguments: JSON.stringify({
+              command: 'set -a && source .env && set +a && npx tsx scripts/gross-margin/monthly.ts',
+            }),
+            id: 't1',
+            identifier: 'claude-code',
+          } as any,
+        ],
+      }),
+    ]);
+
+    // the plugin i18n namespace is not registered in the test harness, so the
+    // label falls back to the apiName; the shape under test is label + keyword.
+    expect(state.kind).toBe('tool');
+    expect((state as any).fallbackTool).toMatch(/ monthly\.ts$/);
+    expect((state as any).fallbackTool).not.toContain('set -a');
   });
 
   it('uses prose state when the trailing block is prose', () => {
@@ -237,7 +234,7 @@ describe('reasoning headline extraction', () => {
 
     expect(state).toEqual({
       explicitStep: 'Searched the web: Searching release notes',
-      fallbackTool: 'Searched the web: Node.js 24',
+      fallbackTool: 'Searched the web Node.js 24',
       kind: 'tool',
     });
   });

@@ -1,4 +1,5 @@
-import { Avatar, Block, Flexbox, Icon, Tag, Text } from '@lobehub/ui';
+import { Block, Flexbox, Icon } from '@lobehub/ui';
+import { Avatar, Tag, Text } from '@lobehub/ui/base-ui';
 import { createStaticStyles } from 'antd-style';
 import { ClockIcon } from 'lucide-react';
 import qs from 'query-string';
@@ -10,6 +11,7 @@ import PublishedTime from '@/components/PublishedTime';
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import WorkspaceLink from '@/features/Workspace/WorkspaceLink';
 import { useQuery } from '@/hooks/useQuery';
+import { resolveCommunityProfileLink } from '@/routes/(main)/community/(detail)/utils/profileLink';
 import { discoverService } from '@/services/discover';
 import { type AssistantMarketSource, type DiscoverAssistantItem } from '@/types/discover';
 
@@ -70,6 +72,7 @@ const AssistantItem = memo<DiscoverAssistantItem>(
     forkCount,
     backgroundColor,
     userName,
+    ownerType,
     type,
   }) => {
     const navigate = useWorkspaceAwareNavigate();
@@ -89,12 +92,16 @@ const AssistantItem = memo<DiscoverAssistantItem>(
     const handleAuthorClick = useCallback(
       (e: React.MouseEvent) => {
         e.stopPropagation();
-        // Use userName for navigation if available, otherwise don't navigate
+        // Open the public author profile outside the current workspace scope.
         if (userName) {
-          navigate(`/community/user/${userName}`);
+          window.open(
+            resolveCommunityProfileLink(userName, ownerType),
+            '_blank',
+            'noopener,noreferrer',
+          );
         }
       },
-      [userName, navigate],
+      [ownerType, userName],
     );
 
     const handleClick = useCallback(() => {

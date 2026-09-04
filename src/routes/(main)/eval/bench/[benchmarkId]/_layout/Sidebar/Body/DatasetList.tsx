@@ -1,6 +1,7 @@
 'use client';
 
-import { AccordionItem, Flexbox, Text } from '@lobehub/ui';
+import { AccordionItem, Flexbox } from '@lobehub/ui';
+import { Text } from '@lobehub/ui/base-ui';
 import { Database } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -34,7 +35,7 @@ const DatasetList = memo<DatasetListProps>(({ activeKey, benchmarkId, itemKey })
             {t('sidebar.datasets')}
           </Text>
           {datasetList.length > 0 && (
-            <Text fontSize={11} type="secondary">
+            <Text fontSize={12} type="secondary">
               {datasetList.length}
             </Text>
           )}

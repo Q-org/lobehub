@@ -6,8 +6,19 @@ const mockAppEnv = {
   enableQueueAgentRuntime: false,
 };
 
+const qstashMocks = vi.hoisted(() => ({
+  client: vi.fn(),
+  publishJSON: vi.fn(),
+}));
+
 vi.mock('@/envs/app', () => ({
   appEnv: mockAppEnv,
+}));
+
+vi.mock('@/libs/qstash', () => ({
+  OtelQstashClient: qstashMocks.client.mockImplementation(() => ({
+    publishJSON: qstashMocks.publishJSON,
+  })),
 }));
 
 describe('QueueService', () => {
@@ -15,9 +26,12 @@ describe('QueueService', () => {
     vi.resetModules();
     // Reset to default local mode
     mockAppEnv.enableQueueAgentRuntime = false;
+    qstashMocks.client.mockClear();
+    qstashMocks.publishJSON.mockReset();
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -47,6 +61,32 @@ describe('QueueService', () => {
       });
 
       expect(taskId).toMatch(/^local-test-op-0-\d+$/);
+    });
+
+    it('deduplicates retries with the same stable execution key', async () => {
+      vi.useFakeTimers();
+      const execution = vi.fn().mockResolvedValue(undefined);
+      const { LocalQueueServiceImpl } = await import('../impls/local');
+      const impl = new LocalQueueServiceImpl();
+      impl.setExecutionCallback(execution);
+      const message = {
+        context: { phase: 'user_input' } as any,
+        deduplicationId: 'agent-intervention:op-stable:0',
+        delay: 0,
+        endpoint: 'http://test.com',
+        operationId: 'op-stable',
+        priority: 'normal' as const,
+        stepIndex: 0,
+      };
+
+      const [firstTaskId, retryTaskId] = await Promise.all([
+        impl.scheduleMessage(message),
+        impl.scheduleMessage(message),
+      ]);
+
+      expect(retryTaskId).toBe(firstTaskId);
+      await vi.runAllTimersAsync();
+      expect(execution).toHaveBeenCalledTimes(1);
     });
 
     it('should schedule batch messages in local mode', async () => {
@@ -145,6 +185,107 @@ describe('QueueService', () => {
 
       // Cleanup
       delete process.env.QSTASH_TOKEN;
+    });
+
+    it('should round sub-second delays up to 1s for QStash', async () => {
+      qstashMocks.publishJSON.mockResolvedValue({ messageId: 'msg-test' });
+
+      const { QStashQueueServiceImpl } = await import('../impls/qstash');
+      const impl = new QStashQueueServiceImpl({ qstashToken: 'test-qstash-token' });
+      const result = impl.scheduleMessage({
+        context: { phase: 'user_input' } as any,
+        delay: 500,
+        endpoint: 'https://example.com/api/agent/run',
+        operationId: 'op-test',
+        priority: 'high',
+        stepIndex: 0,
+      });
+
+      await expect(result).resolves.toBe('msg-test');
+
+      const request = qstashMocks.publishJSON.mock.calls[0][0];
+      expect(request).toMatchObject({ delay: 1 });
+      expect(request.body.timestamp).toEqual(expect.any(Number));
+    });
+
+    it('should publish zero delay immediately without a QStash delay', async () => {
+      qstashMocks.publishJSON.mockResolvedValue({ messageId: 'msg-test' });
+
+      const { QStashQueueServiceImpl } = await import('../impls/qstash');
+      const impl = new QStashQueueServiceImpl({ qstashToken: 'test-qstash-token' });
+      const result = impl.scheduleMessage({
+        context: { phase: 'user_input' } as any,
+        delay: 0,
+        endpoint: 'https://example.com/api/agent/run',
+        operationId: 'op-test',
+        priority: 'high',
+        stepIndex: 0,
+      });
+
+      await expect(result).resolves.toBe('msg-test');
+
+      const request = qstashMocks.publishJSON.mock.calls[0][0];
+      expect(request).not.toHaveProperty('delay');
+    });
+
+    it('should pass second-granularity delays through to QStash', async () => {
+      qstashMocks.publishJSON.mockResolvedValue({ messageId: 'msg-test' });
+
+      const { QStashQueueServiceImpl } = await import('../impls/qstash');
+      const impl = new QStashQueueServiceImpl({ qstashToken: 'test-qstash-token' });
+
+      await impl.scheduleMessage({
+        context: { phase: 'user_input' } as any,
+        delay: 1500,
+        endpoint: 'https://example.com/api/agent/run',
+        operationId: 'op-test',
+        priority: 'high',
+        stepIndex: 0,
+      });
+
+      expect(qstashMocks.publishJSON.mock.calls[0][0]).toMatchObject({ delay: 2 });
+    });
+
+    it('encodes logical deduplication keys as stable QStash-safe opaque IDs', async () => {
+      qstashMocks.publishJSON.mockResolvedValue({ messageId: 'msg-test' });
+
+      const { QStashQueueServiceImpl } = await import('../impls/qstash');
+      const impl = new QStashQueueServiceImpl({ qstashToken: 'test-qstash-token' });
+
+      const publish = async (deduplicationId: string) => {
+        await impl.scheduleMessage({
+          context: { phase: 'user_input' } as any,
+          deduplicationId,
+          delay: 0,
+          endpoint: 'https://example.com/api/agent/run',
+          operationId: 'op-stable',
+          priority: 'high',
+          stepIndex: 0,
+        });
+
+        return qstashMocks.publishJSON.mock.calls.at(-1)![0].deduplicationId;
+      };
+
+      const logicalId = 'agent-intervention:op_intervention_9979660c87f7db5cdac6836bc90e9038:0';
+      const first = await publish(logicalId);
+      const retry = await publish(logicalId);
+      const different = await publish(`${logicalId}:retry`);
+
+      expect(first).toBe('a2d899f251f8376646eb59522e64e447805aaf2e7b97d80b2935d2e0d293ffcb');
+      expect(retry).toBe(first);
+      expect(different).not.toBe(first);
+
+      for (const unsafeOrBoundaryId of [
+        'unsafe id/with?characters=#and-non-ascii-审批',
+        'x'.repeat(63),
+        'x'.repeat(64),
+        'x'.repeat(65),
+      ]) {
+        const providerId = await publish(unsafeOrBoundaryId);
+
+        expect(providerId).toHaveLength(64);
+        expect(providerId).toMatch(/^[a-f\d]{64}$/);
+      }
     });
   });
 

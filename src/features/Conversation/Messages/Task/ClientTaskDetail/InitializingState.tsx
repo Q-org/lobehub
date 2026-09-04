@@ -1,6 +1,7 @@
 'use client';
 
-import { Flexbox, Text } from '@lobehub/ui';
+import { Flexbox } from '@lobehub/ui';
+import { Text } from '@lobehub/ui/base-ui';
 import { createStaticStyles, keyframes } from 'antd-style';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -43,6 +44,10 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
     background: linear-gradient(90deg, transparent, ${cssVar.colorPrimaryBgHover}, transparent);
 
     animation: ${shimmer} 2s infinite;
+
+    @media (prefers-reduced-motion: reduce) {
+      display: none;
+    }
   `,
 }));
 

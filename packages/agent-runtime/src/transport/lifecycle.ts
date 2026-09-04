@@ -1,8 +1,22 @@
 import type { AgentHookType, AnyHookEvent, ToolCallHookEvent } from '../types';
+import type { ToolRunResult } from './tool';
 
 export interface ToolCallMockResult {
-  content: string;
   isMocked: true;
+  result: ToolRunResult;
+}
+
+export interface LifecycleDispatchParams {
+  /** The lifecycle hook event payload. */
+  event: AnyHookEvent;
+  /**
+   * Per-operation webhook configs (the server keeps them on
+   * `state.metadata._hooks` for production/queue mode). Opaque to the package
+   * and forwarded verbatim to the adapter.
+   */
+  serializedHooks?: unknown;
+  /** Which of the coarse-grained hook types this dispatch fires. */
+  type: AgentHookType;
 }
 
 /**
@@ -19,7 +33,7 @@ export interface ToolCallMockResult {
  * to skip real execution); everything else is fire-and-forget observation.
  */
 export interface LifecycleSink {
-  dispatch: (type: AgentHookType, event: AnyHookEvent) => Promise<void>;
+  dispatch: (params: LifecycleDispatchParams) => Promise<void>;
   dispatchBeforeToolCall: (
     event: Omit<ToolCallHookEvent, 'mock' | 'operationId'>,
   ) => Promise<ToolCallMockResult | null>;

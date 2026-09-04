@@ -28,6 +28,13 @@ const HEARTBEAT_INTERVAL = 30_000; // 30s
 const INITIAL_RECONNECT_DELAY = 1000; // 1s
 const MAX_RECONNECT_DELAY = 30_000; // 30s
 const MAX_MISSED_HEARTBEATS = 3; // Force reconnect after 3 missed acks
+/**
+ * Budget for the whole pre-connected window: TCP + TLS + HTTP upgrade AND the
+ * `auth_success` reply. Neither phase raises an event of its own when it simply
+ * hangs, so without a deadline the client waits on the OS TCP timeout — observed
+ * stalling a reconnect for 15+ minutes while the device sat offline.
+ */
+const CONNECT_TIMEOUT = 15_000; // 15s
 
 // ─── Logger Interface ───
 
@@ -62,6 +69,11 @@ export interface GatewayClientOptions {
    * replace its own previous socket should pass a persisted value.
    */
   connectionId?: string;
+  /**
+   * How long to wait for a connection to become fully authenticated before
+   * abandoning it and retrying (default: 15s).
+   */
+  connectTimeoutMs?: number;
   deviceId?: string;
   gatewayUrl?: string;
   logger?: GatewayClientLogger;
@@ -83,6 +95,7 @@ export class GatewayClient extends EventEmitter {
   private ws: WebSocket | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = INITIAL_RECONNECT_DELAY;
   private missedHeartbeats = 0;
   private status: ConnectionStatus = 'disconnected';
@@ -99,6 +112,7 @@ export class GatewayClient extends EventEmitter {
   private serverUrl?: string;
   private logger: GatewayClientLogger;
   private autoReconnect: boolean;
+  private connectTimeoutMs: number;
 
   constructor(options: GatewayClientOptions) {
     super();
@@ -114,6 +128,7 @@ export class GatewayClient extends EventEmitter {
     this.workspaceId = options.workspaceId;
     this.logger = options.logger || noopLogger;
     this.autoReconnect = options.autoReconnect ?? true;
+    this.connectTimeoutMs = options.connectTimeoutMs ?? CONNECT_TIMEOUT;
   }
 
   // ─── Public API ───
@@ -172,6 +187,10 @@ export class GatewayClient extends EventEmitter {
   }
 
   async disconnect(): Promise<void> {
+    // Explicit log so a permanent stop (e.g. the auth_failed path calls
+    // disconnect()) is provable from logs instead of inferred from the
+    // absence of later reconnect lines.
+    this.logger.info('Intentional disconnect; auto-reconnect disabled');
     this.intentionalDisconnect = true;
     this.cleanup();
     this.setStatus('disconnected');
@@ -223,7 +242,14 @@ export class GatewayClient extends EventEmitter {
       const wsUrl = this.buildWsUrl();
       this.logger.debug(`Connecting to: ${wsUrl}`);
 
-      const wsOptions = this.userAgent ? { headers: { 'User-Agent': this.userAgent } } : undefined;
+      // `handshakeTimeout` bounds TCP+TLS+upgrade inside `ws` itself, which turns
+      // a black-holed handshake into a normal error/close pair. The watchdog
+      // below is the belt to that suspenders: it also covers the phase `ws`
+      // knows nothing about — an opened socket whose `auth_success` never lands.
+      const wsOptions = {
+        handshakeTimeout: this.connectTimeoutMs,
+        ...(this.userAgent ? { headers: { 'User-Agent': this.userAgent } } : {}),
+      };
       const ws = new WebSocket(wsUrl, wsOptions);
 
       ws.on('open', this.handleOpen);
@@ -232,6 +258,7 @@ export class GatewayClient extends EventEmitter {
       ws.on('error', this.handleError);
 
       this.ws = ws;
+      this.startConnectWatchdog();
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       this.logger.error('Failed to create WebSocket:', msg);
@@ -270,10 +297,27 @@ export class GatewayClient extends EventEmitter {
     return `${wsProtocol}://${host}/ws?${params.toString()}`;
   }
 
+  /**
+   * Best-effort JWT `exp` readout for auth logs. Internal backoff/heartbeat
+   * reconnects reuse `this.token`, so whether the token was already expired
+   * at auth time is the deciding fact when diagnosing auth failures from
+   * logs. Never logs the token itself.
+   */
+  private describeTokenExpiry(): string {
+    try {
+      const payload = JSON.parse(Buffer.from(this.token.split('.')[1], 'base64url').toString());
+      if (typeof payload.exp !== 'number') return 'token exp: none';
+      const expired = Date.now() >= payload.exp * 1000;
+      return `token exp: ${new Date(payload.exp * 1000).toISOString()}${expired ? ' (EXPIRED)' : ''}`;
+    } catch {
+      return 'token exp: unparsable';
+    }
+  }
+
   // ─── WebSocket Event Handlers ───
 
   private handleOpen = () => {
-    this.logger.info('WebSocket connected, sending auth...');
+    this.logger.info(`WebSocket connected, sending auth... (${this.describeTokenExpiry()})`);
     this.reconnectDelay = INITIAL_RECONNECT_DELAY;
     this.setStatus('authenticating');
 
@@ -293,6 +337,7 @@ export class GatewayClient extends EventEmitter {
       switch (message.type) {
         case 'auth_success': {
           this.logger.info('Authentication successful');
+          this.clearConnectWatchdog();
           this.setStatus('connected');
           this.startHeartbeat();
           this.emit('connected');
@@ -356,6 +401,10 @@ export class GatewayClient extends EventEmitter {
   private handleClose = (code: number, reason: Buffer) => {
     this.logger.info(`WebSocket closed: code=${code} reason=${reason.toString()}`);
     this.stopHeartbeat();
+    // `handshakeTimeout` closes the socket on its own, so the watchdog must be
+    // disarmed here or it would fire later and force a SECOND reconnect on top
+    // of the one this close already scheduled.
+    this.clearConnectWatchdog();
     this.ws = null;
 
     if (!this.intentionalDisconnect && this.autoReconnect) {
@@ -380,17 +429,7 @@ export class GatewayClient extends EventEmitter {
     this.heartbeatTimer = setInterval(() => {
       this.missedHeartbeats++;
       if (this.missedHeartbeats > MAX_MISSED_HEARTBEATS) {
-        this.logger.warn(`Missed ${this.missedHeartbeats} heartbeat acks, forcing reconnect`);
-        this.closeWebSocket();
-        // Listeners are detached in closeWebSocket; handleClose won't run — drive reconnect here
-        this.stopHeartbeat();
-        if (this.autoReconnect) {
-          this.setStatus('reconnecting');
-          this.scheduleReconnect();
-        } else {
-          this.setStatus('disconnected');
-          this.emit('disconnected');
-        }
+        this.forceReconnect(`Missed ${this.missedHeartbeats} heartbeat acks, forcing reconnect`);
         return;
       }
       this.sendMessage({ type: 'heartbeat' });
@@ -401,6 +440,45 @@ export class GatewayClient extends EventEmitter {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
+    }
+  }
+
+  // ─── Connect watchdog ───
+
+  private startConnectWatchdog() {
+    this.clearConnectWatchdog();
+    this.connectWatchdogTimer = setTimeout(() => {
+      this.connectWatchdogTimer = null;
+      this.forceReconnect(
+        `No authenticated connection within ${this.connectTimeoutMs}ms (status: ${this.status}), forcing reconnect`,
+      );
+    }, this.connectTimeoutMs);
+  }
+
+  private clearConnectWatchdog() {
+    if (this.connectWatchdogTimer) {
+      clearTimeout(this.connectWatchdogTimer);
+      this.connectWatchdogTimer = null;
+    }
+  }
+
+  /**
+   * Abandon the current socket and drive the retry ourselves. `closeWebSocket`
+   * detaches our listeners, so `handleClose` will NOT run — every forced path
+   * has to schedule the next attempt itself or the client goes quiet for good.
+   */
+  private forceReconnect(reason: string) {
+    this.logger.warn(reason);
+    this.closeWebSocket();
+    this.stopHeartbeat();
+    this.clearConnectWatchdog();
+
+    if (this.autoReconnect) {
+      this.setStatus('reconnecting');
+      this.scheduleReconnect();
+    } else {
+      this.setStatus('disconnected');
+      this.emit('disconnected');
     }
   }
 
@@ -485,6 +563,7 @@ export class GatewayClient extends EventEmitter {
   private cleanup() {
     this.stopHeartbeat();
     this.clearReconnectTimer();
+    this.clearConnectWatchdog();
     this.closeWebSocket();
   }
 }

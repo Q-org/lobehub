@@ -1,25 +1,15 @@
 import type { TaskDetailActivity } from '@lobechat/types';
 import { useEditor } from '@lobehub/editor/react';
 import { LexicalRenderer } from '@lobehub/editor/renderer';
-import {
-  ActionIcon,
-  Avatar,
-  Block,
-  Button,
-  type DropdownItem,
-  DropdownMenu,
-  Flexbox,
-  Icon,
-  Markdown,
-  Text,
-} from '@lobehub/ui';
-import { App } from 'antd';
+import { Block, type DropdownItem, DropdownMenu, Flexbox, Icon, Markdown } from '@lobehub/ui';
+import { ActionIcon, Avatar, Button, confirmModal, Text } from '@lobehub/ui/base-ui';
 import { cssVar } from 'antd-style';
 import { MessageCircle, MoreHorizontal, Pencil, Trash } from 'lucide-react';
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AttachmentUploadButton } from '@/features/AttachmentInput';
+import { mentionFilledClassName } from '@/features/ChatInput/InputEditor/mentionStyle';
 import { EditorCanvas } from '@/features/EditorCanvas';
 import { seedAttachments } from '@/features/EditorCanvas/attachmentRegistry';
 import {
@@ -27,6 +17,7 @@ import {
   insertFilesIntoEditor,
 } from '@/features/EditorCanvas/editorAttachments';
 import { LinearFileCard } from '@/features/EditorCanvas/LinearFilePlugin';
+import { useWorkspaceCommentMentionOption } from '@/features/Portal/TopicComments/useWorkspaceCommentMentionOption';
 import { useActivityTime } from '@/hooks/useActivityTime';
 import { useTaskStore } from '@/store/task';
 
@@ -49,13 +40,13 @@ interface CommentCardProps {
 
 const CommentCard = memo<CommentCardProps>(({ activity }) => {
   const { t } = useTranslation('chat');
-  const { modal } = App.useApp();
   const deleteComment = useTaskStore((s) => s.deleteComment);
   const updateComment = useTaskStore((s) => s.updateComment);
 
   const [isEditing, setIsEditing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const editor = useEditor();
+  const mentionOption = useWorkspaceCommentMentionOption();
 
   const { text: relTime, title: relTimeTitle } = useActivityTime(activity.time);
   const content = activity.content || t('taskDetail.activities.fallback.comment');
@@ -69,13 +60,17 @@ const CommentCard = memo<CommentCardProps>(({ activity }) => {
     [activity.content, activity.editorData],
   );
 
-  const handleEdit = useCallback(() => {
-    // Seed URL→fileId map so attachments serialize back to fileIds on save.
+  useEffect(() => {
     if (activity.files && activity.files.length > 0) {
-      seedAttachments(activity.files.map((f) => ({ id: f.id, url: f.url })));
+      seedAttachments(
+        activity.files.map((f) => ({ downloadUrl: f.downloadUrl, id: f.id, url: f.url })),
+      );
     }
-    setIsEditing(true);
   }, [activity.files]);
+
+  const handleEdit = useCallback(() => {
+    setIsEditing(true);
+  }, []);
 
   const handleCancel = useCallback(() => {
     setIsEditing(false);
@@ -105,16 +100,14 @@ const CommentCard = memo<CommentCardProps>(({ activity }) => {
 
   const handleDelete = useCallback(() => {
     if (!commentId) return;
-    modal.confirm({
-      centered: true,
+    confirmModal({
       content: t('taskDetail.comment.deleteConfirm.content'),
       okButtonProps: { danger: true },
       okText: t('taskDetail.comment.deleteConfirm.ok'),
       onOk: () => deleteComment(commentId),
       title: t('taskDetail.comment.deleteConfirm.title'),
-      type: 'error',
     });
-  }, [commentId, deleteComment, modal, t]);
+  }, [commentId, deleteComment, t]);
 
   const menuItems = useMemo<DropdownItem[]>(
     () => [
@@ -164,13 +157,16 @@ const CommentCard = memo<CommentCardProps>(({ activity }) => {
 
       {isEditing && (
         <>
-          <EditorCanvas
-            editor={editor}
-            editorData={editorData}
-            entityId={commentId}
-            floatingToolbar={false}
-            style={{ paddingBottom: 4 }}
-          />
+          <div className={mentionFilledClassName}>
+            <EditorCanvas
+              editor={editor}
+              editorData={editorData}
+              entityId={commentId}
+              floatingToolbar={false}
+              mentionOption={mentionOption}
+              style={{ paddingBottom: 4 }}
+            />
+          </div>
           <Flexbox horizontal align={'center'} gap={8} justify={'space-between'}>
             <AttachmentUploadButton onFiles={handleAttach} />
             <Flexbox horizontal gap={8}>
@@ -186,6 +182,7 @@ const CommentCard = memo<CommentCardProps>(({ activity }) => {
       )}
       {!isEditing && Boolean(activity.editorData) && (
         <LexicalRenderer
+          className={mentionFilledClassName}
           overrides={rendererOverrides}
           value={activity.editorData as Parameters<typeof LexicalRenderer>[0]['value']}
           variant={'chat'}

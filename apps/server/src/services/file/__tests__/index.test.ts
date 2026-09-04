@@ -194,6 +194,14 @@ describe('FileService', () => {
     expect(result).toBe(expectedContent);
   });
 
+  it('should pass the preview byte bound to getFileContent', async () => {
+    vi.mocked(service['impl'].getFileContent).mockResolvedValue('# Preview');
+
+    await service.getFileContent('preview.md', 8192);
+
+    expect(service['impl'].getFileContent).toHaveBeenCalledWith('preview.md', 8192);
+  });
+
   it('should delegate getFileByteArray to implementation', async () => {
     const testKey = 'test-key';
     const expectedBytes = new Uint8Array([1, 2, 3]);
@@ -322,6 +330,33 @@ describe('FileService', () => {
             dirname: 'assets/generations/2026-06-19',
             filename: 'generated.png',
             path: 'assets/generations/2026-06-19/generated.png',
+          }),
+        }),
+        expect.any(Boolean),
+      );
+    });
+
+    it('should use explicit file type for non-image base64 uploads', async () => {
+      vi.mocked(service['impl'].uploadMedia).mockResolvedValue({
+        key: 'files/mcp/audio/2026-07-07/voice.mp3',
+      });
+
+      await service.uploadBase64(
+        Buffer.from('audio content').toString('base64'),
+        'files/mcp/audio/2026-07-07/voice.mp3',
+        { fileType: 'audio/mpeg' },
+      );
+
+      expect(service['impl'].uploadMedia).toHaveBeenCalledWith(
+        'files/mcp/audio/2026-07-07/voice.mp3',
+        Buffer.from('audio content'),
+      );
+      expect(mockFileModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileType: 'audio/mpeg',
+          metadata: expect.objectContaining({
+            filename: 'voice.mp3',
+            path: 'files/mcp/audio/2026-07-07/voice.mp3',
           }),
         }),
         expect.any(Boolean),

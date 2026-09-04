@@ -20,6 +20,9 @@ const resolveLabel = (t: TFunction<'plugin'>, source: ActivateSkillSource | unde
     case 'agent': {
       return t('builtins.lobe-skills.apiName.activateAgentSkill');
     }
+    case 'device': {
+      return t('builtins.lobe-skills.apiName.activateDeviceSkill');
+    }
     case 'project': {
       return t('builtins.lobe-skills.apiName.activateProjectSkill');
     }
@@ -75,14 +78,14 @@ export const ActivateSkillInspector = memo<
   if (isArgumentsStreaming) {
     if (!displayName)
       return (
-        <div className={cx(inspectorTextStyles.root, shinyTextStyles.shinyText)}>
-          <span>{label}</span>
+        <div className={inspectorTextStyles.root}>
+          <span className={shinyTextStyles.shinyText}>{label}</span>
         </div>
       );
 
     return (
-      <div className={cx(inspectorTextStyles.root, shinyTextStyles.shinyText)}>
-        <span>{label}:</span>
+      <div className={inspectorTextStyles.root}>
+        <span className={shinyTextStyles.shinyText}>{label}:</span>
         <span className={styles.chip}>
           <SkillsIcon className={styles.skillIcon} size={12} />
           <span className={styles.skillName}>{displayName}</span>
@@ -92,8 +95,8 @@ export const ActivateSkillInspector = memo<
   }
 
   return (
-    <div className={cx(inspectorTextStyles.root, isLoading && shinyTextStyles.shinyText)}>
-      <span>{label}:</span>
+    <div className={inspectorTextStyles.root}>
+      <span className={cx(isLoading && shinyTextStyles.shinyText)}>{label}:</span>
       {displayName && (
         <span className={styles.chip}>
           <SkillsIcon className={styles.skillIcon} size={12} />

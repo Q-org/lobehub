@@ -31,6 +31,8 @@ describe('AskUserBridge', () => {
       expect(req.type).toBe('agent_intervention_request');
       expect(req.operationId).toBe('op-1');
       expect(req.data.identifier).toBe('claude-code');
+      expect(req.data.interactionKind).toBe('question');
+      expect(req.data.provider).toBe('claude-code');
       expect(req.data.apiName).toBe('askUserQuestion');
       expect(req.data.toolCallId).toMatch(/^[\da-f-]{36}$/);
       expect(JSON.parse(req.data.arguments)).toEqual({ questions: [{ q: 'foo' }] });
@@ -74,7 +76,7 @@ describe('AskUserBridge', () => {
       bridge.resolve('not-a-real-id', { result: 'x' });
 
       // Promise should still be unresolved — fast-forward past timeout to confirm.
-      vi.advanceTimersByTime(5 * 60 * 1000 + 1);
+      vi.advanceTimersByTime(10 * 60 * 1000 + 1);
       const answer = await pending;
       expect(answer.cancelled).toBe(true);
       expect(answer.cancelReason).toBe('timeout');
@@ -109,12 +111,12 @@ describe('AskUserBridge', () => {
       drain.stop();
     });
 
-    it('resolves with cancelled=true on timeout (default 5 min)', async () => {
+    it('resolves with cancelled=true on timeout (default 10 min)', async () => {
       const bridge = new AskUserBridge('op-1');
       const drain = drainEvents(bridge);
       const pending = bridge.pending({ arguments: {} });
 
-      vi.advanceTimersByTime(5 * 60 * 1000 - 1);
+      vi.advanceTimersByTime(10 * 60 * 1000 - 1);
       const stillPending = await Promise.race([pending, Promise.resolve('not-yet')]);
       expect(stillPending).toBe('not-yet');
 
@@ -191,7 +193,10 @@ describe('AskUserBridge', () => {
       const req = await drain.firstEvent;
       expect(req.type).toBe('agent_intervention_request');
 
-      bridge.resolve('tc-1', { result: { picked: 'red' } });
+      bridge.resolve('tc-1', {
+        resolutionRequestId: '018fbd8e-7baf-7c6d-8000-000000000001',
+        result: { picked: 'red' },
+      });
       await pending;
 
       const resp = (await drain.events.next()).value as any;
@@ -200,7 +205,9 @@ describe('AskUserBridge', () => {
       expect(resp.data).toEqual({
         cancelReason: undefined,
         cancelled: undefined,
+        producerAck: true,
         result: { picked: 'red' },
+        resolutionRequestId: '018fbd8e-7baf-7c6d-8000-000000000001',
         toolCallId: 'tc-1',
       });
       drain.stop();
@@ -220,7 +227,9 @@ describe('AskUserBridge', () => {
       expect(resp.data).toEqual({
         cancelReason: 'user_cancelled',
         cancelled: true,
+        producerAck: true,
         result: undefined,
+        resolutionRequestId: undefined,
         toolCallId: 'tc-1',
       });
       drain.stop();
@@ -240,7 +249,9 @@ describe('AskUserBridge', () => {
       expect(resp.data).toEqual({
         cancelReason: 'timeout',
         cancelled: true,
+        producerAck: true,
         result: undefined,
+        resolutionRequestId: undefined,
         toolCallId: 'tc-1',
       });
       drain.stop();

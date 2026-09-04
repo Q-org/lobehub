@@ -1,6 +1,9 @@
-import { Avatar, Block, Flexbox, Text } from '@lobehub/ui';
+import { Block, Flexbox, Tooltip } from '@lobehub/ui';
+import { ActionIcon, Avatar, Text } from '@lobehub/ui/base-ui';
 import { cssVar } from 'antd-style';
+import { X } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import type { HeterogeneousAgentStatusGuideVariant } from './types';
 
@@ -15,6 +18,7 @@ interface GuideShellProps {
   compact?: boolean;
   headerDescription?: ReactNode;
   icon: ReactNode;
+  onDismiss?: () => void;
   title: string;
   variant: HeterogeneousAgentStatusGuideVariant;
 }
@@ -25,9 +29,11 @@ const GuideShell = ({
   compact = false,
   headerDescription,
   icon,
+  onDismiss,
   title,
   variant,
 }: GuideShellProps) => {
+  const { t } = useTranslation('common');
   const showHeader = variant !== 'embedded';
   // Compact cards keep the actions on the same row as the title/description
   // (right-aligned) so the whole status reads as a single tight line.
@@ -40,7 +46,6 @@ const GuideShell = ({
             <Avatar
               avatar={icon}
               background={cssVar.colorFillQuaternary}
-              gap={compact ? 8 : 12}
               shape={'square'}
               size={compact ? 32 : 48}
             />
@@ -51,7 +56,16 @@ const GuideShell = ({
               {headerDescription}
             </Flexbox>
           </Flexbox>
-          {actionsInHeader && <Flexbox style={{ flexShrink: 0 }}>{actions}</Flexbox>}
+          {(actionsInHeader || onDismiss) && (
+            <Flexbox horizontal align="center" gap={8} style={{ flexShrink: 0 }}>
+              {actionsInHeader && actions}
+              {onDismiss && (
+                <Tooltip title={t('close')}>
+                  <ActionIcon aria-label={t('close')} icon={X} size="small" onClick={onDismiss} />
+                </Tooltip>
+              )}
+            </Flexbox>
+          )}
         </Flexbox>
       ) : (
         headerDescription

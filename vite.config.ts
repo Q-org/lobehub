@@ -7,15 +7,20 @@ import type { PluginOption, ViteDevServer } from 'vite';
 import { defineConfig, loadEnv } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+import { customBrandingLoadingScreen } from './plugins/vite/customBrandingLoadingScreen';
 import { viteEnvRestartKeys } from './plugins/vite/envRestartKeys';
 import {
   createSharedRolldownOutput,
   sharedModulePreload,
   sharedOptimizeDeps,
+  sharedPwaGlobIgnores,
+  sharedPwaRuntimeCaching,
+  sharedRendererDedupe,
   sharedRendererDefine,
   sharedRendererPlugins,
 } from './plugins/vite/sharedRendererConfig';
 import { vercelSkewProtection } from './plugins/vite/vercelSkewProtection';
+import { createViteWatchOptions } from './plugins/vite/watchOptions';
 
 const isMobile = process.env.MOBILE === 'true';
 const isAuth = process.env.AUTH === 'true';
@@ -116,16 +121,38 @@ export default defineConfig({
       output: createSharedRolldownOutput({ strictExecutionOrder: true }),
     },
   },
-  define: sharedRendererDefine({ isMobile, isElectron: false }),
+  define: {
+    ...sharedRendererDefine({ isMobile, isElectron: false }),
+  },
   experimental: {
     bundledDev: false,
   },
   resolve: {
+    dedupe: sharedRendererDedupe,
     tsconfigPaths: true,
   },
   optimizeDeps: sharedOptimizeDeps,
   plugins: [
+    isMobile &&
+      isDev && {
+        name: 'mobile-runtime-html-dev-entry',
+        enforce: 'pre' as const,
+        configureServer(server: ViteDevServer) {
+          server.middlewares.use((req, _res, next) => {
+            const raw = req.url;
+            if (!raw) return next();
+            const q = raw.indexOf('?');
+            const pathOnly = q === -1 ? raw : raw.slice(0, q);
+            const search = q === -1 ? '' : raw.slice(q);
+            if (pathOnly === '/' || pathOnly === '/index.html') {
+              req.url = `/index.mobile.html${search}`;
+            }
+            next();
+          });
+        },
+      },
     vercelSkewProtection(),
+    customBrandingLoadingScreen(),
     viteEnvRestartKeys(['APP_URL']),
     enableViteDevTools &&
       DevTools({
@@ -260,9 +287,11 @@ export default defineConfig({
         manifest: false,
         registerType: 'prompt',
         workbox: {
+          globIgnores: sharedPwaGlobIgnores,
           globPatterns: ['**/*.{js,css,html,woff2}'],
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
           runtimeCaching: [
+            ...sharedPwaRuntimeCaching,
             {
               handler: 'StaleWhileRevalidate',
               options: { cacheName: 'google-fonts-stylesheets' },
@@ -305,6 +334,10 @@ export default defineConfig({
       : isAuth
         ? Number(process.env.AUTH_SPA_PORT) || 3013
         : Number(process.env.SPA_PORT) || 9876,
+    // The dev orchestrator (scripts/devStartupSequence.mts) pre-resolves a free
+    // port and injects it via env; never silently drift to another port, since
+    // downstream consumers locate this server through that env contract.
+    strictPort: true,
     proxy: {
       '/api': `http://localhost:${process.env.PORT || 3010}`,
       '/oidc': `http://localhost:${process.env.PORT || 3010}`,
@@ -360,8 +393,6 @@ export default defineConfig({
         './packages/agent-manager-runtime/src/**/*.ts',
       ],
     },
-    watch: {
-      ignored: ['**/e2e/reports/**', '**/e2e/screenshots/**'],
-    },
+    watch: createViteWatchOptions([__dirname]),
   },
 });

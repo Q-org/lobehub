@@ -1,7 +1,8 @@
 'use client';
 
 import type { BuiltinRenderProps } from '@lobechat/types';
-import { Accordion, AccordionItem, Flexbox, Tag, Text } from '@lobehub/ui';
+import { Accordion, AccordionItem, Flexbox } from '@lobehub/ui';
+import { Tag, Text } from '@lobehub/ui/base-ui';
 import { createStaticStyles } from 'antd-style';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -59,6 +60,8 @@ interface MemoryItemProps {
 }
 
 const MemoryItem = memo<MemoryItemProps>(({ title, content, subContent, tags }) => {
+  // Guard against non-array `tags` (dirty data) so a bad row can't crash the list.
+  const safeTags = Array.isArray(tags) ? tags : [];
   return (
     <Flexbox className={styles.item} gap={4}>
       {title && <div className={styles.itemTitle}>{title}</div>}
@@ -68,9 +71,9 @@ const MemoryItem = memo<MemoryItemProps>(({ title, content, subContent, tags }) 
           {subContent}
         </Text>
       )}
-      {tags && tags.length > 0 && (
+      {safeTags.length > 0 && (
         <Flexbox horizontal className={styles.tags} gap={4} wrap={'wrap'}>
-          {tags.map((tag, index) => (
+          {safeTags.map((tag, index) => (
             <Tag key={index} size={'small'}>
               {tag}
             </Tag>

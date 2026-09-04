@@ -4,9 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type StreamEvent } from '@/services/agentRuntime';
 import { useChatStore } from '@/store/chat/store';
 import { notifyDesktopHumanApprovalRequired } from '@/store/chat/utils/desktopNotification';
+import { messageMapKey } from '@/store/chat/utils/messageMapKey';
 
-// Keep zustand mock as it's needed globally
-vi.mock('zustand/traditional');
 vi.mock('@/store/chat/utils/desktopNotification', () => ({
   notifyDesktopAgentCompleted: vi.fn().mockResolvedValue(undefined),
   notifyDesktopHumanApprovalRequired: vi.fn().mockResolvedValue(undefined),
@@ -16,6 +15,7 @@ vi.mock('@/store/chat/utils/desktopNotification', () => ({
 const TEST_IDS = {
   ASSISTANT_MESSAGE_ID: 'test-assistant-id',
   OPERATION_ID: 'test-operation-id',
+  PARENT_OPERATION_ID: 'test-parent-operation-id',
   TMP_ASSISTANT_ID: 'tmp-assistant-id',
 } as const;
 
@@ -67,6 +67,7 @@ describe('runAgent actions', () => {
     act(() => {
       useChatStore.setState({
         internal_dispatchMessage: vi.fn(),
+        completeOperation: vi.fn(),
         optimisticUpdateMessageContent: vi.fn(),
         refreshMessages: vi.fn(),
         updateOperationMetadata: vi.fn(),
@@ -346,6 +347,9 @@ describe('runAgent actions', () => {
         const context = createStreamingContext({
           assistantId: TEST_IDS.ASSISTANT_MESSAGE_ID,
         });
+        const updateTopicStatusSpy = vi
+          .spyOn(result.current, 'updateTopicStatus')
+          .mockResolvedValue(undefined as any);
 
         const event: StreamEvent = {
           type: 'step_start',
@@ -375,6 +379,14 @@ describe('runAgent actions', () => {
           expect.objectContaining({
             agentId: 'agent-1',
             groupId: 'group-1',
+            topicId: 'topic-1',
+          }),
+        );
+        expect(updateTopicStatusSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            agentId: 'agent-1',
+            groupId: 'group-1',
+            status: 'waitingForHuman',
             topicId: 'topic-1',
           }),
         );
@@ -486,6 +498,134 @@ describe('runAgent actions', () => {
         expect(replaceMessages).toHaveBeenCalledWith(uiMessages, {
           context: { agentId: 'agent-1', topicId: 'topic-1' },
         });
+      });
+
+      it('does not let a superseded run replace messages from a newer run', async () => {
+        const replaceMessages = vi.fn();
+        const operationContext = { agentId: 'agent-1', topicId: 'topic-1' };
+        const contextKey = messageMapKey(operationContext);
+        act(() => {
+          useChatStore.setState({
+            operationsByContext: {
+              [contextKey]: [TEST_IDS.OPERATION_ID, 'new-send-operation'],
+            },
+            replaceMessages,
+            operations: {
+              [TEST_IDS.OPERATION_ID]: {
+                abortController: new AbortController(),
+                context: operationContext,
+                id: TEST_IDS.OPERATION_ID,
+                metadata: { lastEventId: '0', startTime: 2, stepCount: 0 },
+                status: 'running',
+                type: 'groupAgentStream',
+              },
+              'new-send-operation': {
+                abortController: new AbortController(),
+                context: operationContext,
+                id: 'new-send-operation',
+                metadata: { startTime: 1 },
+                status: 'running',
+                type: 'sendMessage',
+              },
+            },
+          });
+        });
+        const { result } = renderHook(() => useChatStore());
+        const uiMessages = [{ id: 'old-run-message', role: 'assistantGroup' }] as any;
+        const event: StreamEvent = {
+          data: { finalState: { status: 'done' }, reason: 'done', uiMessages },
+          operationId: TEST_IDS.OPERATION_ID,
+          timestamp: Date.now(),
+          type: 'agent_runtime_end',
+        };
+
+        await act(async () => {
+          await result.current.internal_handleAgentStreamEvent(
+            TEST_IDS.OPERATION_ID,
+            event,
+            createStreamingContext({ assistantId: TEST_IDS.ASSISTANT_MESSAGE_ID }),
+          );
+        });
+
+        expect(replaceMessages).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('visible_output_end event', () => {
+      it('clears visible loading without completing the operation', async () => {
+        const { result } = renderHook(() => useChatStore());
+        const event: StreamEvent = {
+          data: { reason: 'completed' },
+          operationId: TEST_IDS.OPERATION_ID,
+          stepIndex: 1,
+          timestamp: Date.now(),
+          type: 'visible_output_end',
+        };
+
+        await act(async () => {
+          await result.current.internal_handleAgentStreamEvent(
+            TEST_IDS.OPERATION_ID,
+            event,
+            createStreamingContext({ assistantId: TEST_IDS.ASSISTANT_MESSAGE_ID }),
+          );
+        });
+
+        expect(result.current.updateOperationMetadata).toHaveBeenCalledWith(TEST_IDS.OPERATION_ID, {
+          visibleLoadingDone: true,
+        });
+        expect(result.current.completeOperation).not.toHaveBeenCalled();
+      });
+
+      it('also clears the parent server runtime visible loading for group SSE streams', async () => {
+        act(() => {
+          useChatStore.setState({
+            operations: {
+              [TEST_IDS.PARENT_OPERATION_ID]: {
+                abortController: new AbortController(),
+                context: { agentId: 'agent-1', groupId: 'group-1', topicId: 'topic-1' },
+                id: TEST_IDS.PARENT_OPERATION_ID,
+                metadata: { lastEventId: '0', startTime: Date.now(), stepCount: 0 },
+                status: 'running',
+                type: 'execServerAgentRuntime',
+              },
+              [TEST_IDS.OPERATION_ID]: {
+                abortController: new AbortController(),
+                context: { agentId: 'agent-1', groupId: 'group-1', topicId: 'topic-1' },
+                id: TEST_IDS.OPERATION_ID,
+                metadata: { lastEventId: '0', startTime: Date.now(), stepCount: 0 },
+                parentOperationId: TEST_IDS.PARENT_OPERATION_ID,
+                status: 'running',
+                type: 'groupAgentStream',
+              },
+            },
+          });
+        });
+
+        const { result } = renderHook(() => useChatStore());
+        const event: StreamEvent = {
+          data: { reason: 'completed' },
+          operationId: TEST_IDS.OPERATION_ID,
+          stepIndex: 1,
+          timestamp: Date.now(),
+          type: 'visible_output_end',
+        };
+
+        await act(async () => {
+          await result.current.internal_handleAgentStreamEvent(
+            TEST_IDS.OPERATION_ID,
+            event,
+            createStreamingContext({ assistantId: TEST_IDS.ASSISTANT_MESSAGE_ID }),
+          );
+        });
+
+        expect(result.current.updateOperationMetadata).toHaveBeenCalledWith(TEST_IDS.OPERATION_ID, {
+          visibleLoadingDone: true,
+        });
+        expect(result.current.updateOperationMetadata).toHaveBeenCalledWith(
+          TEST_IDS.PARENT_OPERATION_ID,
+          { visibleLoadingDone: true },
+        );
+        expect(result.current.completeOperation).not.toHaveBeenCalled();
       });
     });
 

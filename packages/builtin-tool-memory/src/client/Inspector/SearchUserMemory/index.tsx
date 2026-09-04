@@ -1,7 +1,7 @@
 'use client';
 
 import type { BuiltinInspectorProps } from '@lobechat/types';
-import { Text } from '@lobehub/ui';
+import { Text } from '@lobehub/ui/base-ui';
 import { cssVar, cx } from 'antd-style';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -15,13 +15,18 @@ export const SearchUserMemoryInspector = memo<
 >(({ args, partialArgs, isArgumentsStreaming, isLoading, pluginState }) => {
   const { t } = useTranslation('plugin');
 
-  const query = args?.queries?.join(', ') || partialArgs?.queries?.join(', ');
+  // `queries` comes from raw model tool-call args; a model may emit a scalar where
+  // `string[]` is expected, so `.join` guards against a non-array crashing render.
+  const joinQueries = (queries: unknown) => (Array.isArray(queries) ? queries.join(', ') : '');
+  const query = joinQueries(args?.queries) || joinQueries(partialArgs?.queries);
 
   // Initial streaming state
   if (isArgumentsStreaming && !query) {
     return (
-      <div className={cx(inspectorTextStyles.root, shinyTextStyles.shinyText)}>
-        <span>{t('builtins.lobe-user-memory.apiName.searchUserMemory')}</span>
+      <div className={inspectorTextStyles.root}>
+        <span className={shinyTextStyles.shinyText}>
+          {t('builtins.lobe-user-memory.apiName.searchUserMemory')}
+        </span>
       </div>
     );
   }
@@ -37,13 +42,10 @@ export const SearchUserMemoryInspector = memo<
   const hasResults = resultCount > 0;
 
   return (
-    <div
-      className={cx(
-        inspectorTextStyles.root,
-        (isArgumentsStreaming || isLoading) && shinyTextStyles.shinyText,
-      )}
-    >
-      <span>{t('builtins.lobe-user-memory.apiName.searchUserMemory')}: </span>
+    <div className={inspectorTextStyles.root}>
+      <span className={cx((isArgumentsStreaming || isLoading) && shinyTextStyles.shinyText)}>
+        {t('builtins.lobe-user-memory.apiName.searchUserMemory')}:{' '}
+      </span>
       {query && <span className={highlightTextStyles.primary}>{query}</span>}
       {!isLoading &&
         !isArgumentsStreaming &&

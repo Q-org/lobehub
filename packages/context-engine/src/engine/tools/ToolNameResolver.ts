@@ -1,3 +1,4 @@
+import { parseToolNameMaxLength } from '@lobechat/const/plugin';
 import { Md5 } from 'ts-md5';
 
 import type { ChatToolPayload, MessageToolCall } from '@/types/index';
@@ -8,6 +9,46 @@ import type { LobeChatPluginApi, LobeToolManifest } from './types';
 const PLUGIN_SCHEMA_SEPARATOR = '____';
 const PLUGIN_SCHEMA_API_MD5_PREFIX = 'MD5HASH_';
 const TOOL_NAME_COMPONENT_PATTERN = /^[\w-]+$/;
+
+// OpenAI GPT function_call names can't be longer than 64 characters, so long
+// names are compressed to an MD5 hash. Other providers don't have this limit,
+// and the opaque hash hurts readability, so the threshold is configurable via
+// the `TOOL_NAME_MAX_LENGTH` env var (`0` disables length-based compression).
+const DEFAULT_TOOL_NAME_MAX_LENGTH = 64;
+
+/**
+ * Read the threshold from env, defaulting to 64. Read directly (not through the
+ * app env layer) and at module load so it is correct on every serverless worker
+ * / cold start — the same name must compress identically wherever `generate()`
+ * and `resolve()` run for an operation, including resume paths that never touch
+ * the tool-engine setup. Guarded for non-Node runtimes (browser SPA) where
+ * `process` may be undefined; there it falls back to the default.
+ */
+const readEnvMaxLength = (): number => {
+  try {
+    const raw = typeof process === 'undefined' ? undefined : process.env?.TOOL_NAME_MAX_LENGTH;
+    return parseToolNameMaxLength(raw) ?? DEFAULT_TOOL_NAME_MAX_LENGTH;
+  } catch {
+    return DEFAULT_TOOL_NAME_MAX_LENGTH;
+  }
+};
+
+let toolNameMaxLength = readEnvMaxLength();
+
+/**
+ * Override the max tool-name length before MD5 compression kicks in. Mainly for
+ * tests and hosts that source the value differently; normal runtime picks it up
+ * from env at module load. Pass `0` (or negative) to disable length-based
+ * compression entirely; `undefined`/non-finite re-reads the env default.
+ * Invalid-character normalization is independent and always applies.
+ */
+export const setToolNameMaxLength = (value: number | undefined): void => {
+  toolNameMaxLength =
+    typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : readEnvMaxLength();
+};
+
+/** Current max tool-name length; `0` means length-based compression is off. */
+export const getToolNameMaxLength = (): number => toolNameMaxLength;
 
 /**
  * Tool Name Resolver
@@ -59,14 +100,19 @@ export class ToolNameResolver {
     // Step 1: Try normal format
     let toolName = identifierName + PLUGIN_SCHEMA_SEPARATOR + apiName + pluginType;
 
-    // OpenAI GPT function_call name can't be longer than 64 characters
-    // Step 2: If >= 64, hash the name part
-    if (toolName.length >= 64) {
+    // Length-based MD5 compression. Gated on the configured max length so it can
+    // be tuned per deployment (or disabled with 0) — only providers that cap
+    // function names (e.g. OpenAI at 64) actually need it, and the hash hurts
+    // readability. `0`/negative disables it entirely. Invalid-character
+    // normalization above is independent and always applies.
+    const maxLength = getToolNameMaxLength();
+    // Step 2: If >= maxLength, hash the name part
+    if (maxLength > 0 && toolName.length >= maxLength) {
       apiName = this.hashComponent(name);
       toolName = identifierName + PLUGIN_SCHEMA_SEPARATOR + apiName + pluginType;
 
-      // Step 3: If still >= 64, also hash the identifier
-      if (toolName.length >= 64) {
+      // Step 3: If still >= maxLength, also hash the identifier
+      if (toolName.length >= maxLength) {
         identifierName = this.hashComponent(identifier);
         toolName = identifierName + PLUGIN_SCHEMA_SEPARATOR + apiName + pluginType;
       }
@@ -81,9 +127,11 @@ export class ToolNameResolver {
    * @param manifests - Available tool manifests mapped by identifier
    * @param offeredToolNames - Tool names actually sent to the LLM in this turn
    *   (e.g. `lobe-activator____activateTools`). When provided, the
-   *   missing-prefix fallback only considers tools in this list, so a model
-   *   can't trigger tools that weren't enabled for the current call and
-   *   disabled duplicates can't shadow enabled ones.
+   *   missing-prefix fallback only considers tools in this list, so an
+   *   ambiguous bare name cannot resolve to a disabled duplicate. Explicitly
+   *   namespaced, manifest-backed calls are still parsed; the agent's allow-list
+   *   guard turns out-of-scope calls into tool results instead of silently
+   *   dropping them. Unknown namespace/API pairs remain rejected here.
    * @returns Resolved tool payloads
    */
   resolve(
@@ -143,15 +191,6 @@ export class ToolNameResolver {
           }
         }
 
-        const payload: ChatToolPayload = {
-          apiName,
-          arguments: toolCall.function.arguments,
-          id: toolCall.id,
-          identifier,
-          thoughtSignature: toolCall.thoughtSignature,
-          type: (type ?? manifests[identifier]?.type ?? 'builtin') as any,
-        };
-
         // Step 2: Resolve hashed apiName if needed
         if (apiName.startsWith(PLUGIN_SCHEMA_API_MD5_PREFIX) && manifests[identifier]) {
           const md5 = apiName.replace(PLUGIN_SCHEMA_API_MD5_PREFIX, '');
@@ -161,9 +200,30 @@ export class ToolNameResolver {
             (api: LobeChatPluginApi) => this.genHash(api.name) === md5,
           );
           if (api) {
-            payload.apiName = api.name;
+            apiName = api.name;
           }
         }
+
+        const manifest = manifests[identifier];
+        const matchedApi = manifest?.api.find((api: LobeChatPluginApi) => api.name === apiName);
+
+        // A tool explicitly offered by the server is already authoritative and
+        // may not have a prompt manifest. A stale namespaced call that was not
+        // offered this turn must still match a known manifest entry before it
+        // can be preserved for the downstream scope guard. This prevents a
+        // fabricated namespace/API pair from becoming a synthetic tool result.
+        if (offeredSet && !offeredSet.has(toolCall.function.name) && (!manifest || !matchedApi)) {
+          return null;
+        }
+
+        const payload: ChatToolPayload = {
+          apiName,
+          arguments: toolCall.function.arguments,
+          id: toolCall.id,
+          identifier,
+          thoughtSignature: toolCall.thoughtSignature,
+          type: (type ?? manifest?.type ?? 'builtin') as any,
+        };
 
         return payload;
       })

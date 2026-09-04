@@ -4,13 +4,7 @@ import type { ChatFileItem } from '../message/ui/chat';
 // ── Task type aliases ──
 
 export type TaskStatus =
-  | 'backlog'
-  | 'canceled'
-  | 'completed'
-  | 'failed'
-  | 'paused'
-  | 'running'
-  | 'scheduled';
+  'backlog' | 'canceled' | 'completed' | 'failed' | 'paused' | 'running' | 'scheduled';
 
 export type TaskPriority = 0 | 1 | 2 | 3 | 4;
 
@@ -18,6 +12,62 @@ export type TaskActivityType = 'brief' | 'comment' | 'created' | 'topic';
 
 // null = no automation
 export type TaskAutomationMode = 'heartbeat' | 'schedule';
+
+/**
+ * What triggered a given task run. Threaded from the run entry point
+ * (`TaskRunnerService.runTask`) through to `onTopicComplete` so lifecycle
+ * decisions can tell an ad-hoc manual "run now" apart from an automation tick.
+ *
+ * - `manual`    — user (or an agent tool call) invoked the run ad-hoc. Its
+ *                 failure is a one-off signal and must NOT change the task's
+ *                 scheduling state, nor count against the maxExecutions quota.
+ * - `schedule`  — a cron `schedule` tick fired the run.
+ * - `heartbeat` — a heartbeat interval tick fired the run.
+ * - `goal`      — the Goal coordinator started this Work attempt.
+ *                 Like `manual`, it never counts against automation quotas.
+ */
+export type TaskRunTrigger = 'manual' | 'schedule' | 'heartbeat' | 'goal';
+
+/**
+ * A clarifying question the intent reader wants answered before an agent
+ * starts. Only raised when different answers change what gets delivered.
+ */
+export interface TaskIntentClarification {
+  /** What concretely changes depending on the answer. */
+  impact?: string;
+  /** Enumerable candidate answers, offered as one-tap chips. */
+  options?: string[];
+  question: string;
+}
+
+/**
+ * What the intent reader understood from the raw text typed into the task
+ * composer. Purely advisory — nothing here is persisted until the user (or the
+ * auto path, for an unambiguous request) confirms it.
+ */
+export interface TaskIntentAnalysis {
+  clarifications: TaskIntentClarification[];
+  /** How sure the reader is the brief can go to an executor as-is. */
+  confidence: 'high' | 'medium' | 'low';
+  /** Whether this is a single delivery or a standing goal. */
+  kind: 'task' | 'goal';
+  kindReason?: string;
+  /** The request rewritten as a full brief, without added scope. */
+  refinedInstruction: string;
+  /** One sentence, addressed to the user: the outcome that was understood. */
+  summary: string;
+  title: string;
+}
+
+/**
+ * The brief produced after the user answers, replacing the pre-answer reading.
+ * A second pass is needed because the first one was written while those details
+ * were still open, so it names them as gaps the answers have since closed.
+ */
+export interface TaskInstructionSynthesis {
+  instruction: string;
+  title: string;
+}
 
 // ── Config types ──
 
@@ -34,9 +84,10 @@ export interface CheckpointConfig {
 }
 
 /**
- * Task-level delivery-acceptance (verify) gate config, persisted under
- * `tasks.config.verify`. This is the authoritative source for a task run's
- * verify gate — it is *not* unioned with any agent-level mount
+ * Legacy Task-level delivery-acceptance gate config persisted under
+ * `tasks.config.verify`. New flows persist this policy on the Task's Acceptance;
+ * this shape remains for API compatibility and lazy migration. It is *not*
+ * unioned with any agent-level mount
  * (`agencyConfig.verifyRubricId`) — the task config is authoritative and never
  * field-level merged with the agent-level rubric.
  *
@@ -72,6 +123,12 @@ export interface WorkspaceDocNode {
   charCount: number | null;
   createdAt: string;
   fileType: string;
+  /**
+   * The viewer lost access to the pinned document (e.g. it was switched back
+   * to private by its owner after being pinned to a shared task). The node is
+   * a tombstone — no title/metadata — and renders as a no-access placeholder.
+   */
+  inaccessible?: boolean;
   parentId: string | null;
   pinnedBy: string;
   sourceTaskId: string;
@@ -117,6 +174,12 @@ export interface TaskTopicHandoff {
    * about the brief delivery itself, written by the lifecycle service.
    */
   briefDecision?: BriefDecision;
+  /**
+   * Raw last assistant message of the run, captured on completion.
+   * Shown on the run card alongside the LLM-synthesized `summary` so the feed
+   * surfaces the actual run output, not only the summary.
+   */
+  content?: string;
   keyFindings?: string[];
   nextAction?: string;
   summary?: string;
@@ -126,15 +189,46 @@ export interface TaskTopicHandoff {
 // ── Task context (runtime state pockets stored in tasks.context JSONB) ──
 
 export interface TaskSchedulerContext {
-  // Count of consecutive 'error' reasons since the last 'done'. When it hits
-  // the fuse threshold (currently 3) we stop re-arming until the user resolves
-  // the urgent brief.
+  // Count of consecutive automation-tick 'error' reasons since the last 'done'.
+  // When it hits the fuse threshold (currently 3) we pause the task / stop
+  // re-arming until the user resolves the urgent brief. Manual "run now"
+  // failures do NOT touch this counter.
   consecutiveFailures?: number;
   // ISO timestamp when the latest tick was scheduled. Informational only.
   scheduledAt?: string;
   // QStash messageId (or LocalScheduler scheduleId) for the next tick. Used to
   // cancel when the user wants an interval change to take effect immediately.
   tickMessageId?: string;
+  // Generation token carried by the currently active tick. A delivered tick
+  // must match this value so a failed best-effort cancellation cannot create
+  // a second heartbeat chain.
+  tickToken?: string;
+}
+
+/**
+ * Durable lifecycle audit trail for a task, stored under
+ * `tasks.context.lifecycle`. Unlike the live `tasks.error` column — which is
+ * cleared on the next successful run so the UI only shows the *current* error —
+ * this pocket is append-style history that a later success does NOT wipe. It
+ * exists so "the morning check silently didn't fire" is diagnosable after the
+ * fact instead of being masked by a later manual success (paused tasks were
+ * silently overwritten to "scheduled" with error cleared on next success).
+ */
+export interface TaskLifecycleAudit {
+  // Monotonic lifetime count of failed runs (never reset on success).
+  errorCount?: number;
+  // The most recent failure, retained even after a later success clears the
+  // live `error` column.
+  lastError?: {
+    at: string;
+    message: string;
+    trigger?: TaskRunTrigger;
+  };
+  lastPausedAt?: string;
+  // When the task was last auto-paused by the failure fuse, and why.
+  lastPauseReason?: string;
+  // When a successful run last cleared a prior error state (recovery marker).
+  lastRecoveredAt?: string;
 }
 
 // Pointer back to the agent conversation that spawned this task via the
@@ -157,6 +251,12 @@ export interface TaskOriginContext {
 }
 
 export interface TaskContext {
+  completion?: {
+    /** The running operation that asked to complete its own task. The lifecycle
+     * finalizes the task only after that operation has finished cleanly. */
+    requestedByOperationId?: string;
+  };
+  lifecycle?: TaskLifecycleAudit;
   origin?: TaskOriginContext;
   scheduler?: TaskSchedulerContext;
 }
@@ -169,6 +269,11 @@ export interface TaskParticipant {
   id: string;
   title: string;
   type: 'user' | 'agent';
+}
+
+export interface TaskSubtaskProgress {
+  completed: number;
+  total: number;
 }
 
 export interface TaskItem {
@@ -196,14 +301,23 @@ export interface TaskItem {
   name: string | null;
   parentTaskId: string | null;
   priority: number | null;
+  projectId: string | null;
   schedulePattern: string | null;
   scheduleTimezone: string | null;
   seq: number;
   sortOrder: number | null;
   startedAt: Date | null;
   status: string;
+  /** Lightweight recursive descendant progress attached by task list reads. */
+  subtaskProgress?: TaskSubtaskProgress;
+  totalRunCost?: number | null;
+  totalRunDuration?: number | null;
   totalTopics: number | null;
   updatedAt: Date;
+  // 'private' tasks are only visible to their creator in workspace mode.
+  // 'public' (default) tasks are visible to every workspace member.
+  // The column is ignored in personal mode (no workspace).
+  visibility: 'private' | 'public';
   workspaceId: string | null;
 }
 
@@ -236,6 +350,7 @@ export interface NewTask {
   name?: string | null;
   parentTaskId?: string | null;
   priority?: number | null;
+  projectId?: string | null;
   schedulePattern?: string | null;
   scheduleTimezone?: string | null;
   seq: number;
@@ -244,6 +359,7 @@ export interface NewTask {
   status?: string;
   totalTopics?: number | null;
   updatedAt?: Date;
+  visibility?: 'private' | 'public';
   workspaceId?: string | null;
 }
 
@@ -263,9 +379,13 @@ export interface TaskDetailSubtaskRunningTopic {
 
 export interface TaskDetailSubtask {
   assignee?: TaskDetailSubtaskAssignee | null;
+  /** Human assignee (workspace member). Coexists with `assignee` (agent). */
+  assigneeUserId?: string | null;
   automationMode?: TaskAutomationMode | null;
   blockedBy?: string;
   children?: TaskDetailSubtask[];
+  /** Creator of the subtask; with `visibility`, gates who it can be assigned to. */
+  createdByUserId?: string;
   heartbeat?: { interval?: number | null };
   identifier: string;
   name?: string | null;
@@ -273,6 +393,8 @@ export interface TaskDetailSubtask {
   runningTopic?: TaskDetailSubtaskRunningTopic | null;
   schedule?: { pattern?: string | null; timezone?: string | null };
   status: string;
+  updatedAt?: string;
+  visibility?: 'private' | 'public';
 }
 
 export interface TaskDetailWorkspaceNode {
@@ -280,6 +402,11 @@ export interface TaskDetailWorkspaceNode {
   createdAt?: string;
   documentId: string;
   fileType?: string;
+  /**
+   * The viewer lost access to the pinned document (switched back to private
+   * by its owner). Tombstone node — render a no-access placeholder.
+   */
+  inaccessible?: boolean;
   size?: number | null;
   sourceTaskId?: string;
   sourceTaskIdentifier?: string | null;
@@ -297,6 +424,8 @@ export interface TaskDetailActivityAgent {
   avatar: string | null;
   backgroundColor: string | null;
   id: string;
+  /** Personal name; renderers resolve the label with `agentDisplayName(agent, fallback)`. */
+  name?: string | null;
   title: string | null;
 }
 
@@ -315,6 +444,8 @@ export interface TaskDetailActivity {
    */
   completedAt?: string;
   content?: string;
+  /** Topic-only: denormalized total run cost in USD. */
+  cost?: number | null;
   createdAt?: string;
   cronJobId?: string | null;
   /** Comment-only: rich Lexical JSON state. When present, supersedes `content` for rendering. */
@@ -341,6 +472,7 @@ export interface TaskDetailActivity {
    */
   runningOperation?: {
     assistantMessageId: string;
+    heteroType?: string | null;
     operationId: string;
     scope?: string;
     threadId?: string | null;
@@ -358,8 +490,28 @@ export interface TaskDetailActivity {
   time?: string;
   title?: string;
   topicId?: string | null;
+  /** Topic-only: what opened this round — `goal` marks a coordinator-started attempt. */
+  trigger?: TaskRunTrigger | null;
   type: TaskActivityType;
   userId?: string | null;
+  /**
+   * Topic-only: the verification bound to this run. Present as soon as a
+   * verify session exists — `status` is null while it is still being planned,
+   * so the row can say "verifying" before there is a verdict.
+   */
+  verify?: TaskRunVerifySummary | null;
+}
+
+export interface TaskRunVerifySummary {
+  /** The aggregate this round is chained onto — the link target. */
+  acceptanceId: string | null;
+  /** Checks that returned a passing verdict in this round. */
+  passed: number;
+  roundIndex: number | null;
+  runId: string;
+  status: string | null;
+  /** Checks this round produced a result for; 0 while the plan is unexecuted. */
+  total: number;
 }
 
 export interface TaskDetailData {
@@ -370,6 +522,8 @@ export interface TaskDetailData {
   checkpoint?: CheckpointConfig;
   config?: Record<string, unknown>;
   createdAt?: string;
+  /** Creator of the task; used by the UI to gate creator-only actions (e.g. make private). */
+  createdByUserId?: string | null;
   dependencies?: Array<{ dependsOn: string; type: string }>;
   description?: string | null;
   /** Rich-editor JSON state for the instruction; preserves details markdown drops (image size, etc.). */
@@ -381,8 +535,12 @@ export interface TaskDetailData {
   heartbeat?: {
     interval?: number | null;
     lastAt?: string | null;
+    /** When the currently pending heartbeat tick was enqueued. */
+    scheduledAt?: string | null;
     timeout?: number | null;
   };
+  /** Stable database identity used by subject-bound aggregates such as Acceptance. */
+  id?: string;
   identifier: string;
   instruction: string;
   name?: string | null;
@@ -393,12 +551,18 @@ export interface TaskDetailData {
     pattern?: string | null;
     timezone?: string | null;
   };
+  /** When the current task execution started; drives live elapsed-time displays. */
+  startedAt?: string;
   status: string;
   subtasks?: TaskDetailSubtask[];
   topicCount?: number;
+  updatedAt?: string;
   userId?: string | null;
-  /** Task-level verify (delivery-acceptance) gate config; `tasks.config.verify`. */
+  /** Task Acceptance policy, exposed in the legacy TaskVerifyConfig API shape. */
   verify?: TaskVerifyConfig | null;
+  /** Visibility within a workspace. 'public' is workspace-shared (default);
+   *  'private' is only visible to the creator. Ignored in personal mode. */
+  visibility?: 'private' | 'public';
   workspace?: TaskDetailWorkspaceNode[];
   /** Owning workspace; null for personal (non-workspace) tasks. */
   workspaceId?: string | null;

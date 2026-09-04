@@ -1,7 +1,10 @@
 import type { AgentStreamEvent } from '@lobechat/agent-gateway-client';
+import { createAdapter } from '@lobechat/heterogeneous-agents';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { messageService } from '@/services/message';
+import type * as WorkServiceModule from '@/services/work';
+import { workService } from '@/services/work';
 import { emitClientAgentSignalSourceEvent } from '@/store/chat/slices/agentRun/actions/lifecycle/agentSignalBridge';
 import { notifyDesktopHumanApprovalRequired } from '@/store/chat/utils/desktopNotification';
 
@@ -14,6 +17,15 @@ vi.mock('@/services/message', () => ({
     updateMessageError: vi.fn().mockResolvedValue({ success: true }),
   },
 }));
+vi.mock('@/services/work', async (importOriginal) => {
+  const actual = await importOriginal<typeof WorkServiceModule>();
+  return {
+    ...actual,
+    workService: {
+      refreshConversationViews: vi.fn().mockResolvedValue(undefined),
+    },
+  };
+});
 vi.mock('@/store/chat/utils/desktopNotification', () => ({
   notifyDesktopHumanApprovalRequired: vi.fn().mockResolvedValue(undefined),
 }));
@@ -24,6 +36,7 @@ vi.mock('@/store/chat/slices/agentRun/actions/lifecycle/agentSignalBridge', () =
 const getExecutorMock = vi.fn();
 vi.mock('@/store/tool/slices/builtin/executors', () => ({
   getExecutor: (...args: unknown[]) => getExecutorMock(...args),
+  registerBuiltinToolExecutors: vi.fn().mockResolvedValue(undefined),
 }));
 
 // ─── Test Helpers ───
@@ -49,6 +62,7 @@ function createMockStore() {
         metadata: { startTime: 0 },
       },
     } as Record<string, any>,
+    operationsByContext: {},
     replaceMessages: vi.fn(),
     startOperation: vi.fn(() => {
       reasoningCounter += 1;
@@ -58,6 +72,7 @@ function createMockStore() {
       };
     }),
     updateOperationMetadata: vi.fn(),
+    updateTopicStatus: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -110,14 +125,22 @@ describe('createGatewayEventHandler', () => {
       const store = createMockStore();
       const handler = createHandler(store);
 
-      handler(makeEvent('stream_start', { assistantMessage: { id: 'msg-step2' } }));
+      handler(
+        makeEvent('stream_start', {
+          assistantMessage: { id: 'msg-step2', role: 'assistant' },
+        }),
+      );
       await flush();
 
       expect(store.associateMessageWithOperation).toHaveBeenCalledWith('msg-step2', 'op-1');
-      // Native gateway streams carry the new assistant id directly + a SoT
-      // uiMessages snapshot on the preceding step_start, so stream_start must
-      // NOT trigger a DB refetch (the refetch is what clobbered the streamed
-      // assistantGroup with a stale placeholder).
+      // Native gateway ships the assistant seed on stream_start, so the client
+      // inserts the message shell locally (createMessage) and must NOT trigger a
+      // DB refetch — the refetch is what clobbered the streamed assistantGroup
+      // with a stale placeholder.
+      expect(store.internal_dispatchMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'msg-step2', type: 'createMessage' }),
+        { operationId: 'op-1' },
+      );
       expect(messageService.getMessages).not.toHaveBeenCalled();
       expect(store.replaceMessages).not.toHaveBeenCalled();
       expect(emitClientAgentSignalSourceEvent).toHaveBeenCalledWith(
@@ -206,6 +229,120 @@ describe('createGatewayEventHandler', () => {
       handler(makeEvent('stream_chunk', { chunkType: 'text', content: ' world' }));
       await flush();
 
+      expect(store.internal_dispatchMessage).toHaveBeenLastCalledWith(
+        {
+          id: 'msg-initial',
+          type: 'updateMessage',
+          value: { content: 'Hello world' },
+        },
+        { operationId: 'op-1' },
+      );
+    });
+
+    it('applies replace snapshots and drops redelivered snapshot seqs', async () => {
+      const store = createMockStore();
+      const handler = createHandler(store);
+
+      // `lh hetero exec` sends full-text snapshots: each carries the WHOLE
+      // message so far and must replace, not append.
+      handler(
+        makeEvent('stream_chunk', {
+          chunkType: 'text',
+          content: 'Hello',
+          snapshotMode: 'replace',
+          snapshotSeq: 1,
+        }),
+      );
+      handler(
+        makeEvent('stream_chunk', {
+          chunkType: 'text',
+          content: 'Hello world',
+          snapshotMode: 'replace',
+          snapshotSeq: 2,
+        }),
+      );
+      // Redelivery of seq 2 (server-side batch retry) — must be dropped, not
+      // appended: appending would render "Hello worldHello world".
+      handler(
+        makeEvent('stream_chunk', {
+          chunkType: 'text',
+          content: 'Hello world',
+          snapshotMode: 'replace',
+          snapshotSeq: 2,
+        }),
+      );
+      await flush();
+
+      expect(store.internal_dispatchMessage).toHaveBeenLastCalledWith(
+        {
+          id: 'msg-initial',
+          type: 'updateMessage',
+          value: { content: 'Hello world' },
+        },
+        { operationId: 'op-1' },
+      );
+      const textDispatches = store.internal_dispatchMessage.mock.calls.filter(
+        ([action]: any[]) => action.type === 'updateMessage' && 'content' in action.value,
+      );
+      expect(textDispatches).toHaveLength(2); // the redelivered snapshot dispatched nothing
+    });
+
+    it('applies reasoning replace snapshots and drops redelivered seqs', async () => {
+      const store = createMockStore();
+      const handler = createHandler(store);
+
+      handler(
+        makeEvent('stream_chunk', {
+          chunkType: 'reasoning',
+          reasoning: 'thinking',
+          snapshotMode: 'replace',
+          snapshotSeq: 1,
+        }),
+      );
+      handler(
+        makeEvent('stream_chunk', {
+          chunkType: 'reasoning',
+          reasoning: 'thinking done',
+          snapshotMode: 'replace',
+          snapshotSeq: 2,
+        }),
+      );
+      // Redelivered seq 2 — appending it would render "thinking donethinking done".
+      handler(
+        makeEvent('stream_chunk', {
+          chunkType: 'reasoning',
+          reasoning: 'thinking done',
+          snapshotMode: 'replace',
+          snapshotSeq: 2,
+        }),
+      );
+      await flush();
+
+      const reasoningDispatches = store.internal_dispatchMessage.mock.calls.filter(
+        ([action]: any[]) => action.type === 'updateMessage' && 'reasoning' in action.value,
+      );
+      expect(reasoningDispatches).toHaveLength(2); // duplicate dropped
+      expect(reasoningDispatches.at(-1)?.[0].value).toEqual({
+        reasoning: { content: 'thinking done' },
+      });
+    });
+
+    it('a snapshot replaces text accumulated from plain deltas', async () => {
+      const store = createMockStore();
+      const handler = createHandler(store);
+
+      handler(makeEvent('stream_chunk', { chunkType: 'text', content: 'Hel' }));
+      handler(
+        makeEvent('stream_chunk', {
+          chunkType: 'text',
+          content: 'Hello world',
+          snapshotMode: 'replace',
+          snapshotSeq: 1,
+        }),
+      );
+      await flush();
+
+      // Replace, not append — appending would render "HelHello world".
       expect(store.internal_dispatchMessage).toHaveBeenLastCalledWith(
         {
           id: 'msg-initial',
@@ -432,7 +569,70 @@ describe('createGatewayEventHandler', () => {
   });
 
   describe('stream_end', () => {
-    it('should clear tool streaming only', async () => {
+    it('keeps visible loading for a plain no-tool stream boundary', async () => {
+      const store = createMockStore();
+      const handler = createHandler(store);
+
+      handler(makeEvent('stream_chunk', { chunkType: 'text', content: 'hello back' }));
+      handler(makeEvent('stream_end'));
+      await flush();
+
+      expect(store.internal_toggleToolCallingStreaming).toHaveBeenCalledWith(
+        'msg-initial',
+        undefined,
+      );
+      expect(store.updateOperationMetadata).not.toHaveBeenCalledWith('op-1', {
+        visibleLoadingDone: true,
+      });
+      expect(store.completeOperation).not.toHaveBeenCalledWith('op-1');
+    });
+
+    it('keeps visible loading after stream_end when tool calls need another step', async () => {
+      const store = createMockStore();
+      const handler = createHandler(store);
+
+      handler(
+        makeEvent('stream_chunk', {
+          chunkType: 'tools_calling',
+          toolsCalling: [{ id: 'tc-1' }],
+        }),
+      );
+      handler(makeEvent('stream_end'));
+      await flush();
+
+      expect(store.internal_toggleToolCallingStreaming).toHaveBeenCalledWith(
+        'msg-initial',
+        undefined,
+      );
+      expect(store.updateOperationMetadata).not.toHaveBeenCalledWith('op-1', {
+        visibleLoadingDone: true,
+      });
+      expect(store.completeOperation).not.toHaveBeenCalledWith('op-1');
+    });
+
+    it('applies finalContent before ending a reasoning-only stream', async () => {
+      const store = createMockStore();
+      const handler = createHandler(store);
+
+      handler(makeEvent('stream_chunk', { chunkType: 'reasoning', reasoning: 'thinking text' }));
+      handler(makeEvent('stream_end', { finalContent: 'final answer' }));
+      await flush();
+
+      expect(store.internal_dispatchMessage).toHaveBeenCalledWith(
+        {
+          id: 'msg-initial',
+          type: 'updateMessage',
+          value: { content: 'final answer' },
+        },
+        { operationId: 'op-1' },
+      );
+      expect(store.completeOperation).toHaveBeenCalledWith('op-reasoning-1');
+      expect(store.updateOperationMetadata).not.toHaveBeenCalledWith('op-1', {
+        visibleLoadingDone: true,
+      });
+    });
+
+    it('should clear tool streaming', async () => {
       const store = createMockStore();
       const handler = createHandler(store);
 
@@ -443,6 +643,32 @@ describe('createGatewayEventHandler', () => {
         'msg-initial',
         undefined,
       );
+    });
+  });
+
+  describe('visible_output_end', () => {
+    it('marks visible loading done without completing the operation or clearing topic loading', async () => {
+      const store = createMockStore();
+      // The streamed content has landed in the store — the visible_output_end
+      // guard only clears loading once the assistant row is present
+      // with its content, so seed it here to represent that state.
+      store.dbMessagesMap['main_agent-1_topic-1'] = [
+        { content: 'hello back', id: 'msg-initial', role: 'assistant' },
+      ];
+      const handler = createHandler(store);
+
+      handler(makeEvent('stream_chunk', { chunkType: 'text', content: 'hello back' }));
+      handler(makeEvent('visible_output_end'));
+      await flush();
+
+      expect(store.internal_toggleToolCallingStreaming).toHaveBeenCalledWith(
+        'msg-initial',
+        undefined,
+      );
+      expect(store.updateOperationMetadata).toHaveBeenCalledWith('op-1', {
+        visibleLoadingDone: true,
+      });
+      expect(store.completeOperation).not.toHaveBeenCalledWith('op-1');
     });
   });
 
@@ -479,6 +705,13 @@ describe('createGatewayEventHandler', () => {
           topicId: 'topic-1',
         }),
       );
+      expect(store.updateTopicStatus).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentId: 'agent-1',
+          status: 'waitingForHuman',
+          topicId: 'topic-1',
+        }),
+      );
     });
   });
 
@@ -499,6 +732,7 @@ describe('createGatewayEventHandler', () => {
       await flush();
 
       expect(store.internal_executeClientTool).toHaveBeenCalledWith(toolExecuteData, {
+        localOperationId: 'op-1',
         operationId: 'op-1',
       });
     });
@@ -515,6 +749,7 @@ describe('createGatewayEventHandler', () => {
       await flush();
 
       expect(store.internal_executeClientTool).toHaveBeenCalledWith(toolExecuteData, {
+        localOperationId: 'op-1',
         operationId: 'gw-op-server',
       });
     });
@@ -589,6 +824,7 @@ describe('createGatewayEventHandler', () => {
         params: { identifier: 'T-3' },
         result: { content: 'Task deleted', success: true },
         toolCallId: 'tc-1',
+        topicId: 'topic-1',
       });
     });
 
@@ -619,6 +855,45 @@ describe('createGatewayEventHandler', () => {
           toolCallId: 'tc-2',
         }),
       );
+    });
+
+    it('dispatches a Kimi Code Shell result through the registered renderer hook contract', async () => {
+      const store = createMockStore();
+      const handler = createHandler(store);
+      const onAfterCall = vi.fn().mockResolvedValue(undefined);
+      getExecutorMock.mockReturnValueOnce({ onAfterCall });
+      const adapter = createAdapter('kimi-code');
+
+      adapter.adapt({
+        role: 'assistant',
+        tool_calls: [
+          {
+            function: {
+              arguments: JSON.stringify({ command: 'git worktree add /tmp/kimi-wt' }),
+              name: 'Shell',
+            },
+            id: 'kimi-shell-1',
+            type: 'function',
+          },
+        ],
+      });
+      const toolEnd = adapter
+        .adapt({ content: 'created', role: 'tool', tool_call_id: 'kimi-shell-1' })
+        .find((event) => event.type === 'tool_end');
+
+      expect(toolEnd).toBeDefined();
+      handler(makeEvent('tool_end', toolEnd!.data));
+      await flush();
+
+      expect(getExecutorMock).toHaveBeenCalledWith('kimi-code');
+      expect(onAfterCall).toHaveBeenCalledWith({
+        apiName: 'Shell',
+        identifier: 'kimi-code',
+        params: { command: 'git worktree add /tmp/kimi-wt' },
+        result: { content: 'created', success: true },
+        toolCallId: 'kimi-shell-1',
+        topicId: 'topic-1',
+      });
     });
 
     it('should skip onAfterCall when payload identifier/apiName are missing', async () => {
@@ -659,6 +934,7 @@ describe('createGatewayEventHandler', () => {
         identifier: 'lobe-task',
         params: { identifier: 'T-5', name: 'renamed' },
         toolCallId: 'tc-3',
+        topicId: 'topic-1',
       });
     });
   });
@@ -695,6 +971,33 @@ describe('createGatewayEventHandler', () => {
 
       expect(store.completeOperation).toHaveBeenCalledWith('op-1');
       expect(store.replaceMessages).toHaveBeenCalled();
+      expect(workService.refreshConversationViews).not.toHaveBeenCalled();
+    });
+
+    it('should refresh Work views once after a run with a Work-mutating tool', async () => {
+      const store = createMockStore();
+      const handler = createHandler(store);
+
+      handler(
+        makeEvent('tool_end', {
+          isSuccess: true,
+          payload: {
+            parentMessageId: 'msg-parent',
+            toolCalling: {
+              apiName: 'createTask',
+              arguments: '{}',
+              id: 'tool-call-1',
+              identifier: 'lobe-task',
+            },
+          },
+          result: { success: true, workRegistration: { type: 'task' } },
+        }),
+      );
+      handler(makeEvent('agent_runtime_end', { uiMessages: [] }));
+      await flush();
+
+      expect(workService.refreshConversationViews).toHaveBeenCalledTimes(1);
+      expect(workService.refreshConversationViews).toHaveBeenCalledWith('topic-1', undefined);
     });
 
     it('should emit runtime end signal with the current assistant message id', async () => {
@@ -1001,7 +1304,9 @@ describe('createGatewayEventHandler', () => {
 
       const handler = createHandler(store);
 
-      handler(makeEvent('stream_start', { assistantMessage: { id: 'msg-new' } }));
+      handler(
+        makeEvent('stream_start', { assistantMessage: { id: 'msg-new', role: 'assistant' } }),
+      );
       handler(makeEvent('stream_chunk', { chunkType: 'text', content: 'Hello' }));
       await flush();
 
@@ -1042,7 +1347,7 @@ describe('createGatewayEventHandler', () => {
       const handler = createHandler(store);
 
       // Step 1: LLM call
-      handler(makeEvent('stream_start', { assistantMessage: { id: 'msg-1' } }));
+      handler(makeEvent('stream_start', { assistantMessage: { id: 'msg-1', role: 'assistant' } }));
       await flush();
       expect(store.associateMessageWithOperation).toHaveBeenCalledWith('msg-1', 'op-1');
 
@@ -1074,7 +1379,7 @@ describe('createGatewayEventHandler', () => {
       // carries the id directly, so it must NOT trigger a DB refetch
       // Only the association switch happens.
       vi.clearAllMocks();
-      handler(makeEvent('stream_start', { assistantMessage: { id: 'msg-2' } }));
+      handler(makeEvent('stream_start', { assistantMessage: { id: 'msg-2', role: 'assistant' } }));
       await flush();
       expect(store.associateMessageWithOperation).toHaveBeenCalledWith('msg-2', 'op-1');
       expect(messageService.getMessages).not.toHaveBeenCalled();

@@ -1,14 +1,17 @@
 'use client';
 
-import { Flexbox, Tag, Text } from '@lobehub/ui';
+import { Flexbox } from '@lobehub/ui';
+import { Tag, Text } from '@lobehub/ui/base-ui';
 import dayjs from 'dayjs';
 import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import AsyncBoundary from '@/components/AsyncBoundary';
 import { DESKTOP_HEADER_ICON_SIZE } from '@/const/layoutTokens';
 import { useQueryState } from '@/hooks/useQueryParam';
 import CateTag from '@/routes/(main)/memory/features/CateTag';
 import DetailLoading from '@/routes/(main)/memory/features/DetailLoading';
+import DetailNotFound from '@/routes/(main)/memory/features/DetailNotFound';
 import DetailPanel from '@/routes/(main)/memory/features/DetailPanel';
 import HashTags from '@/routes/(main)/memory/features/HashTags';
 import HighlightedContent from '@/routes/(main)/memory/features/HighlightedContent';
@@ -31,7 +34,12 @@ const ActivityRightPanel = memo(() => {
   const [activityId] = useQueryState('activityId', { clearOnDefault: true });
   const useFetchMemoryDetail = useUserMemoryStore((s) => s.useFetchMemoryDetail);
 
-  const { data: activity, isLoading } = useFetchMemoryDetail(activityId, LayersEnum.Activity);
+  const {
+    data: activity,
+    isLoading,
+    error,
+    mutate,
+  } = useFetchMemoryDetail(activityId, LayersEnum.Activity);
 
   const schedule = useMemo(() => {
     if (!activity) return null;
@@ -45,7 +53,6 @@ const ActivityRightPanel = memo(() => {
   if (!activityId) return null;
 
   let content;
-  if (isLoading) content = <DetailLoading />;
   if (activity) {
     const capturedAt =
       activity.startsAt ||
@@ -109,7 +116,18 @@ const ActivityRightPanel = memo(() => {
         ) : undefined,
       }}
     >
-      {content}
+      <AsyncBoundary
+        data={activity}
+        empty={<DetailNotFound />}
+        error={error}
+        errorVariant={'page'}
+        isEmpty={!activity}
+        isLoading={isLoading}
+        loading={<DetailLoading />}
+        onRetry={() => mutate()}
+      >
+        {content}
+      </AsyncBoundary>
     </DetailPanel>
   );
 });

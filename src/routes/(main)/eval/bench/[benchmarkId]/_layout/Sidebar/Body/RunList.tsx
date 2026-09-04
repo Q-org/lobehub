@@ -1,6 +1,7 @@
 'use client';
 
-import { AccordionItem, Flexbox, Text } from '@lobehub/ui';
+import { AccordionItem, Flexbox } from '@lobehub/ui';
+import { Text } from '@lobehub/ui/base-ui';
 import { CheckCircle2, CircleDot, CircleSlash, Loader2, Play, XCircle } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -65,7 +66,7 @@ const RunList = memo<RunListProps>(({ activeKey, benchmarkId, itemKey }) => {
             {t('sidebar.runs')}
           </Text>
           {runList.length > 0 && (
-            <Text fontSize={11} type="secondary">
+            <Text fontSize={12} type="secondary">
               {runList.length}
             </Text>
           )}

@@ -1,15 +1,18 @@
 import { SendButton, useEditor } from '@lobehub/editor/react';
-import { Avatar, Flexbox } from '@lobehub/ui';
+import { Flexbox } from '@lobehub/ui';
+import { Avatar } from '@lobehub/ui/base-ui';
 import { $getRoot } from 'lexical';
 import { memo, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AttachmentUploadButton } from '@/features/AttachmentInput';
+import { mentionFilledClassName } from '@/features/ChatInput/InputEditor/mentionStyle';
 import { EditorCanvas } from '@/features/EditorCanvas';
 import {
   getAttachmentFileIdsFromEditor,
   insertFilesIntoEditor,
 } from '@/features/EditorCanvas/editorAttachments';
+import { useWorkspaceCommentMentionOption } from '@/features/Portal/TopicComments/useWorkspaceCommentMentionOption';
 import { useEnterToSend } from '@/hooks/useEnterToSend';
 import { usePermission } from '@/hooks/usePermission';
 import { useUserAvatar } from '@/hooks/useUserAvatar';
@@ -27,6 +30,9 @@ const CommentInput = memo<{ taskId: string }>(({ taskId }) => {
   const [hasContent, setHasContent] = useState(false);
   const [hasAttachments, setHasAttachments] = useState(false);
   const shouldSendOnEnter = useEnterToSend();
+  // Same member source as document / topic comments, so `@` produces the
+  // identical mention node the server resolves for notifications.
+  const mentionOption = useWorkspaceCommentMentionOption();
 
   const canSubmit = hasContent || hasAttachments;
 
@@ -67,14 +73,25 @@ const CommentInput = memo<{ taskId: string }>(({ taskId }) => {
 
   return (
     <Flexbox className={styles.commentInputCard} gap={6}>
-      <Flexbox horizontal align={'center'} gap={8}>
+      <Flexbox horizontal align={'center'} gap={8} style={{ minWidth: 0, width: '100%' }}>
         <Avatar avatar={userAvatar} size={24} style={{ flexShrink: 0 }} />
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          className={mentionFilledClassName}
+          style={{ flex: '1 1 0', minWidth: 0, overflow: 'hidden' }}
+        >
           <EditorCanvas
             editor={editor}
             floatingToolbar={false}
+            mentionOption={mentionOption}
             placeholder={t('taskDetail.commentPlaceholder')}
-            style={{ fontSize: 14, minHeight: 24, paddingBlock: 0 }}
+            style={{
+              fontSize: 14,
+              maxWidth: '100%',
+              minHeight: 24,
+              overflow: 'hidden',
+              paddingBlock: 0,
+              whiteSpace: 'normal',
+            }}
             onContentChange={handleContentChange}
             onPressEnter={({ event }) => {
               if (!canEditTask) return true;

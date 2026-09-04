@@ -711,6 +711,24 @@ describe('Agent Eval Router Integration Tests', () => {
         expect(result.metadata).toEqual({ reviewed: true });
         expect(result.sortOrder).toBe(5);
       });
+
+      it('should clear a test case message history', async () => {
+        const caller = agentEvalRouter.createCaller(createTestContext(userId));
+        const created = await caller.createTestCase({
+          content: {
+            input: 'Original',
+            messages: [{ content: 'Old turn', role: 'user' }],
+          },
+          datasetId,
+        });
+
+        const result = await caller.updateTestCase({
+          content: { input: 'Original', messages: [] },
+          id: created.id,
+        });
+
+        expect(result.content.messages).toEqual([]);
+      });
     });
 
     describe('deleteTestCase', () => {
@@ -876,7 +894,12 @@ describe('Agent Eval Router Integration Tests', () => {
         });
 
         expect(result.name).toBe('Test Run');
-        expect(result.config).toEqual({ maxConcurrency: 5, timeout: 300000 });
+        // createRun stamps an immutable executionMode snapshot into the config
+        expect(result.config).toEqual({
+          executionMode: 'internal',
+          maxConcurrency: 5,
+          timeout: 300000,
+        });
       });
 
       it('should default status to idle', async () => {

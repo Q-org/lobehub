@@ -1,6 +1,8 @@
+import { app as electronApp, ipcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Import after mocks are set up
+import LocalDatabaseService from '../../services/LocalDatabaseSrv';
 import { App } from '../App';
 
 const mockPathExistsSync = vi.fn();
@@ -45,25 +47,8 @@ vi.mock('electron', () => ({
   },
 }));
 
-// electron-devtools-installer accesses electron.app.getPath at import-time in node env;
-// mock it to avoid side effects in unit tests
-vi.mock('electron-devtools-installer', () => ({
-  REACT_DEVELOPER_TOOLS: 'REACT_DEVELOPER_TOOLS',
-  default: vi.fn(),
-}));
-
 vi.mock('fs-extra', () => ({
   pathExistsSync: (...args: any[]) => mockPathExistsSync(...args),
-}));
-
-// Mock logger
-vi.mock('@/utils/logger', () => ({
-  createLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
 }));
 
 // Mock common/routes
@@ -73,7 +58,7 @@ vi.mock('~common/routes', () => ({
 }));
 
 // Mock other dependencies
-vi.mock('electron-is', () => ({
+vi.mock('@/utils/platform', () => ({
   macOS: vi.fn(() => false),
   windows: vi.fn(() => false),
 }));
@@ -148,6 +133,7 @@ vi.mock('../browser/BrowserManager', () => ({
   BrowserManager: vi.fn().mockImplementation(() => ({
     initializeBrowsers: vi.fn(),
     getIdentifierByWebContents: vi.fn(),
+    waitForMainWindowFirstFrame: vi.fn(() => new Promise(() => {})),
   })),
 }));
 
@@ -196,6 +182,71 @@ describe('App', () => {
       const storagePath = appInstance.appStoragePath;
 
       expect(storagePath).toBe('/mock/storage/path');
+    });
+  });
+
+  describe('service lifecycle', () => {
+    it('enables precise renderer heap metrics before Chromium is ready', async () => {
+      appInstance = new App();
+
+      await appInstance.bootstrap();
+
+      expect(electronApp.commandLine.appendSwitch).toHaveBeenCalledWith(
+        'enable-precise-memory-info',
+      );
+      const appendSwitch = vi.mocked(electronApp.commandLine.appendSwitch);
+      const preciseCall = appendSwitch.mock.calls.findIndex(
+        ([name]) => name === 'enable-precise-memory-info',
+      );
+      expect(appendSwitch.mock.invocationCallOrder[preciseCall]).toBeLessThan(
+        vi.mocked(electronApp.whenReady).mock.invocationCallOrder[0],
+      );
+    });
+
+    it('destroys registered services before quitting', () => {
+      appInstance = new App();
+      const databaseService = appInstance.getService(LocalDatabaseService);
+      const destroy = vi.spyOn(databaseService, 'destroy');
+      const beforeQuitHandler = vi
+        .mocked(electronApp.on)
+        .mock.calls.findLast(([event]) => (event as string) === 'before-quit')?.[1] as () => void;
+
+      beforeQuitHandler();
+
+      expect(destroy).toHaveBeenCalledOnce();
+    });
+
+    it('prewarms the local database after browser initialization yields to the event loop', async () => {
+      appInstance = new App();
+      const databaseService = appInstance.getService(LocalDatabaseService);
+      const initialize = vi.spyOn(databaseService, 'initialize').mockImplementation(() => {});
+
+      await appInstance.bootstrap();
+
+      expect(appInstance.browserManager.initializeBrowsers).toHaveBeenCalledOnce();
+      expect(initialize).not.toHaveBeenCalled();
+
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(initialize).toHaveBeenCalledOnce();
+      expect(
+        vi.mocked(appInstance.browserManager.initializeBrowsers).mock.invocationCallOrder[0],
+      ).toBeLessThan(initialize.mock.invocationCallOrder[0]);
+    });
+  });
+
+  describe('desktop bootstrap identity', () => {
+    it('responds through the registered controller without an elided runtime symbol', () => {
+      appInstance = new App();
+      const listener = vi
+        .mocked(ipcMain.on)
+        .mock.calls.findLast(
+          ([channel]) => channel === 'desktop:get-bootstrap-identity',
+        )?.[1] as (event: { returnValue?: unknown }) => void;
+      const event: { returnValue?: unknown } = {};
+
+      expect(() => listener(event)).not.toThrow();
+      expect(event.returnValue).toEqual({ isIdentityResolved: true });
     });
   });
 });

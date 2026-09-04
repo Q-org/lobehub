@@ -10,23 +10,32 @@ import type { PartialDeep } from 'type-fest';
 
 import { merge } from '@/utils/merge';
 
+import type { FtsSearchCandidateSource } from '../repositories/ftsSearch';
 import type { AgentItem, NewAgent, NewSession, SessionItem } from '../schemas';
 import { agents, agentsToSessions, sessionGroups, sessions } from '../schemas';
 import type { LobeChatDatabase } from '../type';
 import { sanitizeBm25Query } from '../utils/bm25';
 import { genEndDateWhere, genRangeWhere, genStartDateWhere, genWhere } from '../utils/genWhere';
 import { idGenerator } from '../utils/idGenerator';
+import { inJsonStringArray } from '../utils/inJsonStringArray';
 import { buildWorkspacePayload, buildWorkspaceWhere } from '../utils/workspace';
 
 export class SessionModel {
   private userId: string;
   private db: LobeChatDatabase;
+  private ftsSearchCandidateSource?: FtsSearchCandidateSource;
   private workspaceId?: string;
 
-  constructor(db: LobeChatDatabase, userId: string, workspaceId?: string) {
+  constructor(
+    db: LobeChatDatabase,
+    userId: string,
+    workspaceId?: string,
+    ftsSearchCandidateSource?: FtsSearchCandidateSource,
+  ) {
     this.userId = userId;
     this.db = db;
     this.workspaceId = workspaceId;
+    this.ftsSearchCandidateSource = ftsSearchCandidateSource;
   }
 
   private ownership = () =>
@@ -312,7 +321,12 @@ export class SessionModel {
     if (item) return;
 
     return await this.create({
-      config: merge(DEFAULT_AGENT_CONFIG, defaultAgentConfig),
+      // `merge` returns the `@lobechat/types` LobeAgentConfig shape
+      // (plugins: AgentPluginEntry[]); `create`'s `config` is the DB-layer
+      // NewAgent, whose `plugins` column type is intentionally left as
+      // `string[]` (only the domain types are widened for the tri-state
+      // rollout, not the JSONB column's compile-time annotation).
+      config: merge(DEFAULT_AGENT_CONFIG, defaultAgentConfig) as Partial<NewAgent>,
       slug: INBOX_SESSION_ID,
       type: 'agent',
     });
@@ -337,8 +351,7 @@ export class SessionModel {
 
     if (!result) return;
 
-    // eslint-disable-next-line unused-imports/no-unused-vars
-    const { agent, clientId, ...session } = result;
+    const { agent, clientId: _clientId, ...session } = result;
     const sessionId = this.genId();
 
     const { id: _, slug: __, ...config } = agent;
@@ -378,9 +391,9 @@ export class SessionModel {
       const result = await trx.delete(sessions).where(and(eq(sessions.id, id), this.ownership()));
 
       // Delete orphaned agents
-      await this.clearOrphanAgent(agentIds, trx);
+      const orphanedAgentIds = await this.clearOrphanAgent(agentIds, trx);
 
-      return result;
+      return { orphanedAgentIds, result };
     });
   };
 
@@ -388,7 +401,7 @@ export class SessionModel {
    * Batch delete sessions and their associated agent data if no longer referenced.
    */
   batchDelete = async (ids: string[]) => {
-    if (ids.length === 0) return { count: 0 };
+    if (ids.length === 0) return { orphanedAgentIds: [] as string[], result: { count: 0 } };
 
     return this.db.transaction(async (trx) => {
       // Get agent IDs associated with these sessions
@@ -410,9 +423,9 @@ export class SessionModel {
         .where(and(inArray(sessions.id, ids), this.ownership()));
 
       // Delete orphaned agents
-      await this.clearOrphanAgent(agentIds, trx);
+      const orphanedAgentIds = await this.clearOrphanAgent(agentIds, trx);
 
-      return result;
+      return { orphanedAgentIds, result };
     });
   };
 
@@ -427,8 +440,8 @@ export class SessionModel {
     });
   };
 
-  clearOrphanAgent = async (agentIds: string[], trx: any) => {
-    if (agentIds.length === 0) return;
+  clearOrphanAgent = async (agentIds: string[], trx: any): Promise<string[]> => {
+    if (agentIds.length === 0) return [];
 
     // Batch query to find which agents still have sessions
     const remainingLinks = (await trx
@@ -448,6 +461,8 @@ export class SessionModel {
         .delete(agents)
         .where(and(inArray(agents.id, orphanedAgentIds), this.agentsOwnership()));
     }
+
+    return orphanedAgentIds;
   };
 
   // **************** Update *************** //
@@ -533,8 +548,7 @@ export class SessionModel {
     type,
     ...res
   }: SessionItem & { agentsToSessions?: { agent: AgentItem }[] }):
-    | LobeAgentSession
-    | LobeGroupSession => {
+    LobeAgentSession | LobeGroupSession => {
     const meta = {
       avatar: avatar ?? undefined,
       backgroundColor: backgroundColor ?? undefined,
@@ -600,6 +614,44 @@ export class SessionModel {
     const { keyword, pageSize = 9999, current = 0 } = params;
     const offset = current * pageSize;
 
+    if (this.ftsSearchCandidateSource?.ftsSearchCandidateEnabled) {
+      const { candidates } = await this.ftsSearchCandidateSource.ftsSearchCandidates({
+        entity: 'agents',
+        filters: {},
+        pagination: {},
+        query: { fields: ['title', 'description'], text: keyword },
+      });
+      const candidateIds = candidates.map(({ id }) => id);
+      if (candidateIds.length === 0) return [];
+
+      const matchingAgents = await this.db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(this.agentsOwnership(), inJsonStringArray(agents.id, candidateIds)))
+        .orderBy(asc(agents.id))
+        .limit(pageSize)
+        .offset(offset);
+      const matchingAgentIds = matchingAgents.map(({ id }) => id);
+      if (matchingAgentIds.length === 0) return [];
+
+      const agentSessions = await this.db
+        .select({ agentId: agentsToSessions.agentId, session: sessions })
+        .from(agentsToSessions)
+        .leftJoin(sessions, eq(agentsToSessions.sessionId, sessions.id))
+        .where(inArray(agentsToSessions.agentId, matchingAgentIds));
+      const firstSessionByAgentId = new Map<string, SessionItem>();
+
+      for (const { agentId, session } of agentSessions) {
+        if (session && !firstSessionByAgentId.has(agentId)) {
+          firstSessionByAgentId.set(agentId, session as SessionItem);
+        }
+      }
+
+      return matchingAgents
+        .map(({ id }) => firstSessionByAgentId.get(id))
+        .filter((session): session is SessionItem => session !== undefined);
+    }
+
     try {
       const bm25Query = sanitizeBm25Query(keyword);
 
@@ -616,13 +668,14 @@ export class SessionModel {
       });
 
       // Filter and map results, ensuring valid session associations
-      return (
-        results
-          .filter((item) => item.agentsToSessions && item.agentsToSessions.length > 0)
-          // @ts-expect-error
-          .map((item) => item.agentsToSessions[0].session)
-          .filter((session) => session !== null && session !== undefined)
-      );
+      return results
+        .filter((item) => item.agentsToSessions && item.agentsToSessions.length > 0)
+        .map(
+          (item) =>
+            (item.agentsToSessions as Array<{ session: SessionItem | null | undefined }>)[0]
+              ?.session,
+        )
+        .filter((session) => session !== null && session !== undefined);
     } catch (e) {
       console.error('findSessionsByKeywords error:', e, { keyword });
       return [];

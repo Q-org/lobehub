@@ -2,7 +2,6 @@
  * @vitest-environment happy-dom
  */
 import { render, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ConnectorSourceType } from '@/database/schemas';
@@ -51,20 +50,10 @@ vi.mock('@lobechat/const', () => ({
   getLobehubSkillProviderById: () => undefined,
 }));
 
-vi.mock('antd', () => ({
-  Button: ({
-    children,
-    disabled,
-    onClick,
-  }: {
-    children?: ReactNode;
-    disabled?: boolean;
-    onClick?: () => void;
-  }) => (
-    <button disabled={disabled} onClick={onClick}>
-      {children}
-    </button>
-  ),
+// The manage gate pulls in the user store chain — irrelevant to these render
+// tests, and it drags heavy module graphs into the unit env.
+vi.mock('@/hooks/useResourceManageable', () => ({
+  useResourceManageable: () => true,
 }));
 
 vi.mock('@/store/tool', () => ({

@@ -17,8 +17,6 @@ const swrMocks = vi.hoisted(() => ({
   mutate: vi.fn(),
 }));
 
-vi.mock('zustand/traditional');
-
 vi.mock('@/libs/swr', async (importOriginal) => {
   const actual = await importOriginal<typeof SWRLib>();
 
@@ -303,8 +301,7 @@ describe('createCommonSlice', () => {
       const mockUserState: UserInitializationState = {
         userId: 'user-id',
         isOnboard: false,
-        // No onboarding.finishedAt and no agentOnboarding.finishedAt:
-        // user is still in the shared-prefix flow.
+        // No onboarding.finishedAt: user is still in the onboarding flow.
         preference: {} as any,
         settings: { general: { fontSize: 14 } },
       };

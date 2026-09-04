@@ -1,6 +1,7 @@
 'use client';
 
-import { Accordion, AccordionItem, Avatar, Flexbox, Tag, Text } from '@lobehub/ui';
+import { Accordion, AccordionItem, Flexbox } from '@lobehub/ui';
+import { Avatar, Tag, Text } from '@lobehub/ui/base-ui';
 import { Steps } from 'antd';
 import { createStaticStyles, cssVar } from 'antd-style';
 import { memo } from 'react';
@@ -89,9 +90,14 @@ export const ExperienceMemoryCard = memo<ExperienceMemoryCardProps>(({ data, loa
   const { summary, details, tags, title, withExperience } = data || {};
   const { situation, reasoning, action, possibleOutcome, keyLearning } = withExperience || {};
 
+  // `tags` comes from raw model tool-call args without zod coercion, so a model may
+  // emit a scalar where `string[]` is expected. Normalize to an array to keep this
+  // card from crashing on dirty input (`.map` on a non-array).
+  const safeTags = Array.isArray(tags) ? tags : [];
+
   const hasStarContent = situation || reasoning || action || possibleOutcome;
 
-  if (!summary && !details && !tags?.length && !title && !hasStarContent && !keyLearning)
+  if (!summary && !details && !safeTags.length && !title && !hasStarContent && !keyLearning)
     return null;
 
   const starItems = [
@@ -115,7 +121,7 @@ export const ExperienceMemoryCard = memo<ExperienceMemoryCardProps>(({ data, loa
       {hasStarContent ? (
         <>
           {/* Collapsed Summary */}
-          {(summary || tags?.length) && (
+          {(summary || safeTags.length > 0) && (
             <Accordion gap={0}>
               <AccordionItem
                 itemKey="summary"
@@ -133,9 +139,9 @@ export const ExperienceMemoryCard = memo<ExperienceMemoryCardProps>(({ data, loa
                 <Flexbox gap={8} paddingBlock={'8px 12px'} paddingInline={8}>
                   {summary && <div className={styles.summary}>{summary}</div>}
                   {details && <div className={styles.detail}>{details}</div>}
-                  {tags && tags.length > 0 && (
+                  {safeTags.length > 0 && (
                     <Flexbox horizontal className={styles.tags} gap={8} wrap={'wrap'}>
-                      {tags.map((tag, index) => (
+                      {safeTags.map((tag, index) => (
                         <Tag key={index}>{tag}</Tag>
                       ))}
                     </Flexbox>
@@ -211,9 +217,9 @@ export const ExperienceMemoryCard = memo<ExperienceMemoryCardProps>(({ data, loa
             <>
               {summary && <div className={styles.summary}>{summary}</div>}
               {details && <StreamingMarkdown>{details}</StreamingMarkdown>}
-              {tags && tags.length > 0 && (
+              {safeTags.length > 0 && (
                 <Flexbox horizontal className={styles.tags} gap={8} wrap={'wrap'}>
-                  {tags.map((tag, index) => (
+                  {safeTags.map((tag, index) => (
                     <Tag key={index}>{tag}</Tag>
                   ))}
                 </Flexbox>

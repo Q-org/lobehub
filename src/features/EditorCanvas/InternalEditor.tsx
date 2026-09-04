@@ -12,7 +12,8 @@ import {
 import { Editor, useEditorState } from '@lobehub/editor/react';
 import { createStaticStyles } from 'antd-style';
 import isEqual from 'fast-deep-equal';
-import { memo, type RefObject, useCallback, useEffect, useMemo, useRef } from 'react';
+import type { CSSProperties, RefObject } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { createChatInputRichPlugins } from '@/features/ChatInput/InputEditor/plugins';
@@ -98,11 +99,14 @@ export interface InternalEditorProps extends EditorCanvasProps {
 const InternalEditor = memo<InternalEditorProps>(
   ({
     contentChangeLockRef,
+    contentStyle,
     disabled,
     editable = true,
     editor,
     extraPlugins,
     floatingToolbar = true,
+    getPopupContainer,
+    mentionOption,
     onContentChange,
     onInit,
     onPressEnter,
@@ -130,6 +134,18 @@ const InternalEditor = memo<InternalEditorProps>(
     }, []);
 
     const finalPlaceholder = placeholder || t('pageEditor.editorPlaceholder');
+    const wrapperStyle = useMemo<CSSProperties>(
+      () => ({
+        cursor: disabled ? 'not-allowed' : undefined,
+        maxWidth: '100%',
+        minWidth: 0,
+        opacity: disabled ? 0.65 : undefined,
+        overflow: 'hidden',
+        pointerEvents: disabled ? 'none' : undefined,
+        width: '100%',
+      }),
+      [disabled],
+    );
 
     // Build plugins array
     const plugins = useMemo(() => {
@@ -290,9 +306,7 @@ const InternalEditor = memo<InternalEditorProps>(
 
     return (
       <div
-        style={
-          disabled ? { cursor: 'not-allowed', opacity: 0.65, pointerEvents: 'none' } : undefined
-        }
+        style={wrapperStyle}
         onClick={(e) => {
           e.stopPropagation();
           e.preventDefault();
@@ -302,6 +316,8 @@ const InternalEditor = memo<InternalEditorProps>(
           content={''}
           editable={editable && !disabled}
           editor={editor}
+          getPopupContainer={getPopupContainer}
+          mentionOption={mentionOption}
           placeholder={finalPlaceholder}
           plugins={plugins}
           slashOption={slashItems ? { items: slashItems } : undefined}
@@ -309,6 +325,7 @@ const InternalEditor = memo<InternalEditorProps>(
           style={{
             paddingBottom: 32,
             ...style,
+            ...contentStyle,
           }}
           {...(onPressEnter ? { onPressEnter } : {})}
         />

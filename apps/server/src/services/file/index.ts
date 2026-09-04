@@ -54,8 +54,10 @@ export class FileService {
   /**
    * Get file content
    */
-  public async getFileContent(key: string): Promise<string> {
-    return this.impl.getFileContent(key);
+  public async getFileContent(key: string, byteLength?: number): Promise<string> {
+    return byteLength === undefined
+      ? this.impl.getFileContent(key)
+      : this.impl.getFileContent(key, byteLength);
   }
 
   /**
@@ -94,6 +96,17 @@ export class FileService {
    */
   public async createPreSignedUrlForPreview(key: string, expiresIn?: number): Promise<string> {
     return this.impl.createPreSignedUrlForPreview(key, expiresIn);
+  }
+
+  /**
+   * Create a storage URL whose response is delivered as a browser download.
+   */
+  public async createDownloadUrl(
+    url: string,
+    fileName: string,
+    expiresIn?: number,
+  ): Promise<string> {
+    return this.impl.createDownloadUrl(url, fileName, expiresIn);
   }
 
   /**
@@ -306,6 +319,7 @@ export class FileService {
   public async uploadBase64(
     base64Data: string,
     pathname: string,
+    options?: { fileType?: string },
   ): Promise<{ fileId: string; key: string; url: string }> {
     let base64String: string;
 
@@ -333,7 +347,14 @@ export class FileService {
 
     // Calculate file metadata
     const size = buffer.length;
-    const fileType = inferContentTypeFromImageUrl(pathname) || 'application/octet-stream';
+    let fileType = options?.fileType || 'application/octet-stream';
+    if (!options?.fileType) {
+      try {
+        fileType = inferContentTypeFromImageUrl(pathname);
+      } catch {
+        // Non-image files (e.g. audio) won't match image extension whitelist
+      }
+    }
     const hash = sha256(buffer);
 
     // Generate UUID for cleaner URLs

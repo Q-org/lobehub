@@ -29,6 +29,7 @@ function createMockInner(): IStreamEventManager & { calls: Record<string, any[][
     publishAgentRuntimeInit: track('publishAgentRuntimeInit') as any,
     publishStreamChunk: track('publishStreamChunk') as any,
     publishStreamEvent: track('publishStreamEvent') as any,
+    readEventsOnce: track('readEventsOnce') as any,
     subscribeStreamEvents: track('subscribeStreamEvents') as any,
   };
 }
@@ -79,6 +80,39 @@ describe('GatewayStreamNotifier', () => {
       );
     });
 
+    it('awaits stream_end gateway push before resolving', async () => {
+      let resolveFetch!: () => void;
+      mockFetch.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFetch = () => resolve({ ok: true, text: () => Promise.resolve('') });
+          }),
+      );
+
+      const result = notifier.publishStreamEvent('op-1', {
+        data: { finalContent: 'final answer' },
+        stepIndex: 0,
+        type: 'stream_end' as const,
+      });
+      let resolved = false;
+      void result.then(() => {
+        resolved = true;
+      });
+
+      await Promise.resolve();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `${gatewayUrl}/api/operations/push-event`,
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(resolved).toBe(false);
+
+      resolveFetch();
+
+      await expect(result).resolves.toBe('publishStreamEvent-result');
+      expect(resolved).toBe(true);
+    });
+
     it('still returns inner result even if gateway fails', async () => {
       mockFetch.mockRejectedValueOnce(new Error('network error'));
 
@@ -124,6 +158,92 @@ describe('GatewayStreamNotifier', () => {
       const urls = mockFetch.mock.calls.map((c: any[]) => c[0]);
       expect(urls).toContain(`${gatewayUrl}/api/operations/init`);
       expect(urls).toContain(`${gatewayUrl}/api/operations/push-event`);
+    });
+
+    it('waits for gateway init before exposing the operation to subscribers', async () => {
+      let resolveInit!: () => void;
+      mockFetch.mockImplementation((url: string) => {
+        if (url.endsWith('/api/operations/init')) {
+          return new Promise((resolve) => {
+            resolveInit = () => resolve({ ok: true, text: () => Promise.resolve('') });
+          });
+        }
+
+        return Promise.resolve({ ok: true, text: () => Promise.resolve('') });
+      });
+
+      const result = notifier.publishAgentRuntimeInit('op-1', { userId: 'user-1' });
+      let resolved = false;
+      void result.then(() => {
+        resolved = true;
+      });
+
+      await vi.waitFor(() => {
+        expect(mockFetch).toHaveBeenCalledWith(
+          `${gatewayUrl}/api/operations/init`,
+          expect.objectContaining({ method: 'POST' }),
+        );
+      });
+      expect(resolved).toBe(false);
+      expect(mockFetch.mock.calls.map((call: any[]) => call[0])).not.toContain(
+        `${gatewayUrl}/api/operations/push-event`,
+      );
+
+      resolveInit();
+
+      await expect(result).resolves.toBe('publishAgentRuntimeInit-result');
+      expect(resolved).toBe(true);
+      await vi.waitFor(() => {
+        expect(mockFetch.mock.calls.map((call: any[]) => call[0])).toContain(
+          `${gatewayUrl}/api/operations/push-event`,
+        );
+      });
+    });
+
+    it('does not drop the awaited init when the event lane is saturated', async () => {
+      const pending: Array<{
+        resolve: () => void;
+        url: string;
+      }> = [];
+      mockFetch.mockImplementation(
+        (url: string) =>
+          new Promise((resolve) => {
+            pending.push({
+              resolve: () => resolve({ ok: true, text: () => Promise.resolve('') }),
+              url,
+            });
+          }),
+      );
+
+      for (let index = 0; index < 20; index++) {
+        await notifier.publishStreamEvent(`op-event-${index}`, {
+          data: {},
+          stepIndex: 0,
+          type: 'step_start',
+        });
+      }
+      await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(20));
+
+      const result = notifier.publishAgentRuntimeInit('op-init', { userId: 'user-1' });
+      let resolved = false;
+      void result.then(() => {
+        resolved = true;
+      });
+
+      await vi.waitFor(() => {
+        expect(pending.some(({ url }) => url.endsWith('/api/operations/init'))).toBe(true);
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(21);
+      expect(resolved).toBe(false);
+
+      pending.find(({ url }) => url.endsWith('/api/operations/init'))!.resolve();
+      await expect(result).resolves.toBe('publishAgentRuntimeInit-result');
+
+      for (const request of pending.filter(({ url }) =>
+        url.endsWith('/api/operations/push-event'),
+      )) {
+        request.resolve();
+      }
     });
   });
 

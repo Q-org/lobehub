@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { log } from '../utils/logger';
+import { registerDocCommand } from './doc';
+
 // Mock TRPC client — use vi.hoisted so the variable is available in vi.mock factories
 const { mockTrpcClient } = vi.hoisted(() => ({
   mockTrpcClient: {
@@ -31,21 +34,6 @@ const { getTrpcClient: mockGetTrpcClient } = vi.hoisted(() => ({
 vi.mock('../api/client', () => ({
   getTrpcClient: mockGetTrpcClient,
 }));
-
-vi.mock('../utils/logger', () => ({
-  log: {
-    debug: vi.fn(),
-    error: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-  },
-  setVerbose: vi.fn(),
-}));
-
-// eslint-disable-next-line import-x/first
-import { log } from '../utils/logger';
-// eslint-disable-next-line import-x/first
-import { registerDocCommand } from './doc';
 
 describe('doc command', () => {
   let exitSpy: ReturnType<typeof vi.spyOn>;

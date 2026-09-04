@@ -58,6 +58,34 @@ describe('OIDC Provider - Market Client Integration', () => {
   });
 
   describe('Provider Configuration', () => {
+    it('should accept both Cloud desktop callback origins during the apex migration', async () => {
+      vi.doMock('@/envs/app', () => ({
+        appEnv: {
+          APP_URL: 'https://app.lobehub.com',
+          MARKET_BASE_URL: undefined,
+        },
+      }));
+
+      const [{ default: Provider }, { defaultClients }] = await Promise.all([
+        import('oidc-provider'),
+        import('./config'),
+      ]);
+      const provider = new Provider('https://app.lobehub.com/oidc', { clients: defaultClients });
+      const desktopClient = await provider.Client.find('lobehub-desktop');
+
+      expect(
+        desktopClient?.redirectUriAllowed('https://app.lobehub.com/oidc/callback/desktop'),
+      ).toBe(true);
+      expect(desktopClient?.redirectUriAllowed('https://lobehub.com/oidc/callback/desktop')).toBe(
+        true,
+      );
+      expect(desktopClient?.redirectUriAllowed('https://example.com/oidc/callback/desktop')).toBe(
+        false,
+      );
+
+      vi.doUnmock('@/envs/app');
+    });
+
     it('should export API_AUDIENCE constant', async () => {
       vi.doMock('@/envs/app', () => ({
         appEnv: {
@@ -68,6 +96,38 @@ describe('OIDC Provider - Market Client Integration', () => {
 
       const module = await import('./provider');
       expect(module.API_AUDIENCE).toBe('urn:lobehub:chat');
+
+      vi.doUnmock('@/envs/app');
+    }, 10000);
+
+    it('should define numeric TTLs for all OIDC provider artifacts', async () => {
+      vi.doMock('@/envs/app', () => ({
+        appEnv: {
+          APP_URL: 'https://example.com',
+          MARKET_BASE_URL: undefined,
+        },
+      }));
+
+      const module = await import('./provider');
+
+      expect(module.oidcArtifactTTL).toEqual({
+        AccessToken: 7 * 24 * 60 * 60,
+        AuthorizationCode: 600,
+        BackchannelAuthenticationRequest: 600,
+        ClientCredentials: 600,
+        DeviceCode: 600,
+        Grant: 14 * 24 * 60 * 60,
+        IdToken: 3600,
+        Interaction: 3600,
+        RefreshToken: 30 * 24 * 60 * 60,
+        Session: 30 * 24 * 60 * 60,
+      });
+
+      for (const ttl of Object.values(module.oidcArtifactTTL)) {
+        expect(typeof ttl).toBe('number');
+        expect(Number.isSafeInteger(ttl)).toBe(true);
+        expect(ttl).toBeGreaterThan(0);
+      }
 
       vi.doUnmock('@/envs/app');
     }, 10000);

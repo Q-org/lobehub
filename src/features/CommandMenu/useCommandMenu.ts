@@ -4,17 +4,18 @@ import { useCallback, useEffect } from 'react';
 import useSWR from 'swr';
 
 import { isDesktop } from '@/const/version';
-import { type SearchResult } from '@/database/repositories/search';
+import type { FtsSearchResult } from '@/database/repositories/ftsSearch';
+import { useCreateMenuItems } from '@/features/HomeSidebar/hooks';
 import { useCreateNewModal } from '@/features/LibraryModal';
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import { usePermission } from '@/hooks/usePermission';
 import { useGroupWizard } from '@/layout/GlobalProvider/GroupWizardProvider';
 import { lambdaClient } from '@/libs/trpc/client';
-import { useCreateMenuItems } from '@/routes/(main)/home/_layout/hooks';
 import { electronSystemService } from '@/services/electron/system';
 import { useAgentStore } from '@/store/agent';
 import { builtinAgentSelectors } from '@/store/agent/selectors/builtinAgentSelectors';
 import { useChatStore } from '@/store/chat';
+import { topicSelectors } from '@/store/chat/selectors';
 import { useGlobalStore } from '@/store/global';
 import { globalHelpers } from '@/store/global/helpers';
 import { useHomeStore } from '@/store/home';
@@ -60,12 +61,21 @@ export const useCommandMenu = () => {
   const hasSearch = debouncedSearch.trim().length > 0;
   const searchQuery = debouncedSearch.trim();
 
-  const { data: searchResults, isLoading: isSearching } = useSWR<SearchResult[]>(
+  const {
+    data: searchResults,
+    error: searchError,
+    isLoading: isSearching,
+    isValidating: isSearchValidating,
+  } = useSWR<FtsSearchResult[]>(
     hasSearch ? ['search', searchQuery, agentId, typeFilter] : null,
     async () => {
       const locale = globalHelpers.getCurrentLanguage();
       return lambdaClient.search.query.query({
         agentId,
+        // Keep the aggregate response DB-only: marketplace results are reached
+        // through the permanent typed-search entries instead of gating every
+        // keystroke on three remote marketplace round-trips.
+        includeMarketplace: false,
         limitPerType: typeFilter ? 50 : 5, // Show more results when filtering by type
         locale,
         query: searchQuery,
@@ -171,6 +181,10 @@ export const useCommandMenu = () => {
 
   const handleCreateTopic = useCallback(() => {
     if (!canCreate) return;
+    // The command item is disabled while a new-topic send is in flight, but a
+    // selection can still race the window opening — don't close the palette on
+    // what would be a silent no-op in openNewTopicOrSaveTopic.
+    if (topicSelectors.isNewTopicSendInFlight(useChatStore.getState())) return;
 
     openNewTopicOrSaveTopic();
     onClose();
@@ -223,15 +237,18 @@ export const useCommandMenu = () => {
     handleSendToSelectedAgent,
     handleThemeChange,
     hasSearch,
+    hasSearchResponse: searchResults !== undefined,
     isSearching,
+    isSearchValidating,
     mounted,
     open,
     page,
     pages,
     pathname,
     search,
+    searchError,
     searchQuery,
-    searchResults: searchResults || ([] as SearchResult[]),
+    searchResults: searchResults || ([] as FtsSearchResult[]),
     selectedAgent,
     setSearch,
     setSelectedAgent,

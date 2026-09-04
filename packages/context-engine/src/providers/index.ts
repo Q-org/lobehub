@@ -11,21 +11,29 @@ export {
 } from './AgentDocumentInjector';
 export { AgentManagementContextInjector } from './AgentManagementContextInjector';
 export { BotPlatformContextInjector } from './BotPlatformContextInjector';
+export { ContextSelectionsInjector } from './ContextSelectionsInjector';
 export { DiscordContextProvider } from './DiscordContextProvider';
 export { EvalContextSystemInjector } from './EvalContextSystemInjector';
+export {
+  buildExpertiseContextSnapshot,
+  ExpertiseContextInjector,
+} from './ExpertiseContextInjector';
 export { ForceFinishSummaryInjector } from './ForceFinishSummaryInjector';
+export type { GoalContextSyntheticInjectorConfig } from './GoalContextSyntheticInjector';
+export { GoalContextSyntheticInjector } from './GoalContextSyntheticInjector';
 export { GroupAgentBuilderContextInjector } from './GroupAgentBuilderContextInjector';
 export { GroupContextInjector } from './GroupContextInjector';
 export { HistorySummaryProvider } from './HistorySummary';
 export { KnowledgeInjector } from './KnowledgeInjector';
 export { LocalSystemToolSnapshotInjector } from './LocalSystemToolSnapshotInjector';
-export { ModelKnowledgeCutoffProvider } from './ModelKnowledgeCutoffProvider';
+export { ModelInfoProvider } from './ModelInfoProvider';
 export { OnboardingActionHintInjector } from './OnboardingActionHintInjector';
 export { OnboardingContextInjector } from './OnboardingContextInjector';
 export { OnboardingSyntheticStateInjector } from './OnboardingSyntheticStateInjector';
 export { PageEditorContextInjector } from './PageEditorContextInjector';
 export { PageSelectionsInjector } from './PageSelectionsInjector';
 export { PlanInjector } from './PlanInjector';
+export { RuntimeAdditionalContextProvider } from './RuntimeAdditionalContextProvider';
 export {
   formatSelectedSkills,
   formatSelectedSkillsContext,
@@ -36,13 +44,13 @@ export {
   formatSelectedToolsContext,
   SelectedToolInjector,
 } from './SelectedToolInjector';
-export { SkillContextProvider } from './SkillContextProvider';
+export { selectActivatedSkills, SkillContextProvider } from './SkillContextProvider';
 export { SystemDateProvider } from './SystemDateProvider';
 export { SystemRoleInjector } from './SystemRoleInjector';
 export { TaskManagerContextInjector } from './TaskManagerContextInjector';
 export { TodoInjector } from './TodoInjector';
 export { ToolDiscoveryProvider } from './ToolDiscoveryProvider';
-export { ToolSystemRoleProvider } from './ToolSystemRole';
+export { selectToolPromptManifests, ToolSystemRoleProvider } from './ToolSystemRole';
 export { TopicReferenceContextInjector } from './TopicReferenceContextInjector';
 export { UserMemoryInjector } from './UserMemoryInjector';
 
@@ -75,8 +83,13 @@ export type {
   BotPlatformContext,
   BotPlatformContextInjectorConfig,
 } from './BotPlatformContextInjector';
+export type { ContextSelectionsInjectorConfig } from './ContextSelectionsInjector';
 export type { DiscordContext, DiscordContextProviderConfig } from './DiscordContextProvider';
 export type { EvalContext, EvalContextSystemInjectorConfig } from './EvalContextSystemInjector';
+export type {
+  ExpertiseContextInjectorConfig,
+  ExpertiseContextSource,
+} from './ExpertiseContextInjector';
 export type { ForceFinishSummaryInjectorConfig } from './ForceFinishSummaryInjector';
 export type {
   GroupAgentBuilderContext,
@@ -91,7 +104,7 @@ export type {
 export type { HistorySummaryConfig } from './HistorySummary';
 export type { KnowledgeInjectorConfig } from './KnowledgeInjector';
 export type { LocalSystemToolSnapshotInjectorConfig } from './LocalSystemToolSnapshotInjector';
-export type { ModelKnowledgeCutoffProviderConfig } from './ModelKnowledgeCutoffProvider';
+export type { ModelInfoProviderConfig } from './ModelInfoProvider';
 export type {
   OnboardingContext,
   OnboardingContextInjectorConfig,
@@ -100,6 +113,7 @@ export type {
 export type { PageEditorContextInjectorConfig } from './PageEditorContextInjector';
 export type { PageSelectionsInjectorConfig } from './PageSelectionsInjector';
 export type { Plan, PlanInjectorConfig } from './PlanInjector';
+export type { RuntimeAdditionalContextProviderConfig } from './RuntimeAdditionalContextProvider';
 export type { SelectedSkillInjectorConfig } from './SelectedSkillInjector';
 export type { SelectedToolInjectorConfig } from './SelectedToolInjector';
 export type { SkillContextProviderConfig, SkillMeta } from './SkillContextProvider';

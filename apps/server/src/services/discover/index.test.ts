@@ -262,6 +262,10 @@ describe('DiscoverService', () => {
     mockMarket = {
       agents: {
         getAgentList: vi.fn().mockResolvedValue({
+          categoryCounts: [
+            { category: 'creativity', count: 1 },
+            { category: 'productivity', count: 1 },
+          ],
           items: mockMarketAssistantList,
           totalCount: mockMarketAssistantList.length,
           currentPage: 1,
@@ -312,9 +316,11 @@ describe('DiscoverService', () => {
 
   describe('Assistant Market (new source)', () => {
     it('getAssistantList should transform market SDK response', async () => {
-      const result = await service.getAssistantList();
+      const result = await service.getAssistantList({ includeCategoryCounts: true });
 
-      expect(mockMarket.agents.getAgentList).toHaveBeenCalled();
+      expect(mockMarket.agents.getAgentList).toHaveBeenCalledWith(
+        expect.objectContaining({ includeCategoryCounts: true }),
+      );
       expect(result.items[0]).toEqual(
         expect.objectContaining({
           identifier: 'market-assistant-1',
@@ -324,6 +330,53 @@ describe('DiscoverService', () => {
           pluginCount: 1,
         }),
       );
+      expect(result.categoryCounts).toEqual([
+        { category: 'creativity', count: 1 },
+        { category: 'productivity', count: 1 },
+      ]);
+    });
+
+    it('getAssistantList should preserve a successful empty response in strict mode', async () => {
+      mockMarket.agents.getAgentList.mockResolvedValue({
+        currentPage: 1,
+        items: [],
+        pageSize: 20,
+        totalCount: 0,
+        totalPages: 0,
+      });
+
+      const result = await service.getAssistantList({ q: 'missing' }, { throwOnError: true });
+
+      expect(result).toEqual({
+        currentPage: 1,
+        items: [],
+        pageSize: 20,
+        totalCount: 0,
+        totalPages: 0,
+      });
+    });
+
+    it('getAssistantList should rethrow market errors in strict mode', async () => {
+      const marketError = new Error('Market unavailable');
+      mockMarket.agents.getAgentList.mockRejectedValue(marketError);
+
+      await expect(
+        service.getAssistantList({ q: 'assistant' }, { throwOnError: true }),
+      ).rejects.toBe(marketError);
+    });
+
+    it('getAssistantList should retain the empty fallback by default', async () => {
+      mockMarket.agents.getAgentList.mockRejectedValue(new Error('Market unavailable'));
+
+      const result = await service.getAssistantList({ q: 'assistant' });
+
+      expect(result).toEqual({
+        currentPage: 1,
+        items: [],
+        pageSize: 20,
+        totalCount: 0,
+        totalPages: 0,
+      });
     });
 
     it('getAssistantDetail should fetch from market SDK by default', async () => {

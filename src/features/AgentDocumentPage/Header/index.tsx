@@ -1,7 +1,8 @@
 'use client';
 
-import { ActionIcon, Flexbox, Text } from '@lobehub/ui';
-import { DropdownMenu } from '@lobehub/ui/base-ui';
+import { agentDisplayName } from '@lobechat/types';
+import { Flexbox } from '@lobehub/ui';
+import { ActionIcon, DropdownMenu, Text } from '@lobehub/ui/base-ui';
 import { cssVar, cx } from 'antd-style';
 import { MoreHorizontal } from 'lucide-react';
 import { memo } from 'react';
@@ -22,6 +23,7 @@ interface HeaderProps {
   agentDocumentId?: string;
   agentId: string;
   documentId: string;
+  itemError?: unknown;
   onBack: () => void;
   onDeleted: () => void;
   title?: string;
@@ -29,9 +31,13 @@ interface HeaderProps {
 }
 
 const Header = memo<HeaderProps>(
-  ({ agentId, agentDocumentId, documentId, onBack, onDeleted, title, updatedAt }) => {
+  ({ agentId, agentDocumentId, documentId, itemError, onBack, onDeleted, title, updatedAt }) => {
     const { t } = useTranslation(['file', 'chat']);
     const meta = useAgentStore(agentSelectors.getAgentMetaById(agentId));
+    const showTitleError = !!itemError && !title;
+    const resolvedTitle = showTitleError
+      ? t('workingPanel.resources.error', { ns: 'chat' })
+      : title || t('pageEditor.titlePlaceholder');
     const { menuItems } = useMenu({
       agentDocumentId,
       agentId,
@@ -53,13 +59,25 @@ const Header = memo<HeaderProps>(
               onClick={onBack}
             >
               <Text style={{ color: cssVar.colorTextSecondary }}>
-                {meta.title || t('untitledAgent', { ns: 'chat' })}
+                {agentDisplayName(meta, t('untitledAgent', { ns: 'chat' }))}
               </Text>
             </Flexbox>
             <Text style={{ color: cssVar.colorTextQuaternary, flexShrink: 0 }}>/</Text>
-            <Text className={cx(oneLineEllipsis)} style={{ minWidth: 0 }} weight={500}>
-              {title || t('pageEditor.titlePlaceholder')}
+            <Text
+              className={cx(oneLineEllipsis)}
+              style={{ color: showTitleError ? cssVar.colorError : undefined, minWidth: 0 }}
+              weight={500}
+            >
+              {resolvedTitle}
             </Text>
+            <DropdownMenu
+              iconSpaceMode={'group'}
+              items={menuItems}
+              placement={'bottomLeft'}
+              popupProps={{ style: { minWidth: 200 } }}
+            >
+              <ActionIcon icon={MoreHorizontal} size={DESKTOP_HEADER_ICON_SMALL_SIZE} />
+            </DropdownMenu>
           </Flexbox>
         }
         right={
@@ -67,14 +85,6 @@ const Header = memo<HeaderProps>(
             {documentId && <AutoSaveHint documentId={documentId} />}
             {documentId && <ShareButton documentId={documentId} />}
             <ToggleRightPanelButton hideWhenExpanded />
-            <DropdownMenu
-              iconSpaceMode={'group'}
-              items={menuItems}
-              placement={'bottomRight'}
-              popupProps={{ style: { minWidth: 200 } }}
-            >
-              <ActionIcon icon={MoreHorizontal} size={DESKTOP_HEADER_ICON_SMALL_SIZE} />
-            </DropdownMenu>
           </Flexbox>
         }
       />

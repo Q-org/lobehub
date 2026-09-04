@@ -1,24 +1,13 @@
-import { type ButtonProps } from '@lobehub/ui';
-import {
-  ActionIcon,
-  Avatar,
-  Button,
-  Center,
-  CopyButton,
-  Flexbox,
-  Input,
-  Skeleton,
-  Tag,
-  Text,
-} from '@lobehub/ui';
-import { Modal } from '@lobehub/ui/base-ui';
+import { Center, CopyButton, Flexbox, Icon, Input } from '@lobehub/ui';
+import { ActionIcon, Avatar, Button, Skeleton, Tag, Text } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar } from 'antd-style';
 import { startCase } from 'es-toolkit/compat';
 import { LinkIcon, Share2Icon } from 'lucide-react';
-import { type ReactNode } from 'react';
+import { type ComponentProps, type ReactNode } from 'react';
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import ImperativeModal from '@/components/ImperativeModal';
 import { useShare } from '@/hooks/useShare';
 
 import CardBanner from '../../components/CardBanner';
@@ -59,7 +48,7 @@ const styles = createStaticStyles(({ css, cssVar }) => {
   };
 });
 
-interface ShareButtonProps extends ButtonProps {
+interface ShareButtonProps extends ComponentProps<typeof Button> {
   meta?: {
     avatar?: string | ReactNode;
     desc?: string;
@@ -145,13 +134,18 @@ const ShareButton = memo<ShareButtonProps>(({ meta, ...rest }) => {
       </Center>
     );
   } else {
-    content = <Skeleton active paragraph={{ rows: 4 }} title={false} />;
+    content = <Skeleton.Text rows={4} />;
   }
 
   return (
     <>
-      <Button icon={Share2Icon} size={'large'} onClick={() => setOpen(true)} {...rest} />
-      <Modal
+      <Button
+        icon={<Icon icon={Share2Icon} />}
+        size={'large'}
+        onClick={() => setOpen(true)}
+        {...rest}
+      />
+      <ImperativeModal
         footer={null}
         open={open}
         title={t('share')}
@@ -159,7 +153,7 @@ const ShareButton = memo<ShareButtonProps>(({ meta, ...rest }) => {
         onCancel={() => setOpen(false)}
       >
         {content}
-      </Modal>
+      </ImperativeModal>
     </>
   );
 });

@@ -8,6 +8,11 @@ import { useHomeStore } from '@/store/home';
 export interface CreateHeteroAgentOptions {
   groupId?: string;
   onSuccess?: () => void;
+  /**
+   * Forwarded to the server-side `visibility` column when the call originates
+   * from the sidebar's "Private" bucket. Defaults to undefined (public).
+   */
+  visibility?: 'private' | 'public';
 }
 
 /**
@@ -26,7 +31,7 @@ export const useCreateHeteroAgent = () => {
         config: {
           agencyConfig: {
             heterogeneousProvider: {
-              command: definition.command,
+              command: definition.defaultCommand,
               type: definition.type,
             },
           },
@@ -41,6 +46,7 @@ export const useCreateHeteroAgent = () => {
           title: definition.title,
         },
         groupId: options?.groupId,
+        visibility: options?.visibility,
       });
       await refreshAgentList();
       navigate(`/agent/${result.agentId}`);

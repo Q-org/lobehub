@@ -1,6 +1,8 @@
 /* eslint-disable perfectionist/sort-interfaces */
 import type { FileContent, KnowledgeBaseInfo, PageContentContext } from '@lobechat/prompts';
 import type {
+  ExpertiseContextSnapshot,
+  RuntimeAdditionalContextFragment,
   RuntimeInitialContext,
   RuntimeSelectedSkill,
   RuntimeSelectedTool,
@@ -215,6 +217,8 @@ export interface MessagesEngineParams {
   messages: UIChatMessage[];
   /** Model ID */
   model: string;
+  /** Human-friendly model name, e.g. `Fable 5`. Omit when unknown. */
+  modelDisplayName?: string;
   /** Model knowledge cutoff date, e.g. `2024-06`. Omit when unknown. */
   modelKnowledgeCutoff?: string;
   /** Provider ID */
@@ -236,6 +240,8 @@ export interface MessagesEngineParams {
   enableAgentMode?: boolean;
   /** Whether to enable history message count limit */
   enableHistoryCount?: boolean;
+  /** Whether to inject the operation expertise snapshot */
+  enableExpertise?: boolean;
   /** Force finish flag: when true, injects summary prompt for max-steps completion */
   forceFinish?: boolean;
   /** Function to format history summary */
@@ -248,6 +254,10 @@ export interface MessagesEngineParams {
   inputTemplate?: string;
   /** System role */
   systemRole?: string;
+  /** Agent-materialized presentation contexts for this LLM call */
+  additionalContexts?: readonly RuntimeAdditionalContextFragment[];
+  /** Immutable expertise captured when the operation started. */
+  expertise?: ExpertiseContextSnapshot;
 
   // ========== Capability injection (dependency injection) ==========
   /** Model capability checker */

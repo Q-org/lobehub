@@ -1,6 +1,8 @@
 packages:
   - '../../packages/agent-gateway-client'
+  - '../../packages/agent-tracing'
   - '../../packages/device-control'
+  - '../../packages/device-sandbox'
   - '../../packages/device-gateway-client'
   - '../../packages/device-identity'
   - '../../packages/heterogeneous-agents'
@@ -8,10 +10,13 @@ packages:
   - '../../packages/tool-runtime'
   - '../../packages/prompts'
   - '../../packages/const'
+  - '../../packages/eval-rubric'
   - '../../packages/types'
   - '../../packages/model-bank'
+  - '../../packages/ssrf-safe-fetch'
   - '../../packages/business/const'
   - '../../packages/file-loaders'
+  - '../../packages/utils'
   - '.'
 allowBuilds:
   esbuild: true
